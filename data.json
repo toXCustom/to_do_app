@@ -1,5 +1,17 @@
-{
-    "a": "asd",
-    "q": "qwe",
-    "z": "zxc"
-}
+[
+    {
+        "name": "a",
+        "description": "asd",
+        "done": true
+    },
+    {
+        "name": "q",
+        "description": "qwe",
+        "done": false
+    },
+    {
+        "name": "z",
+        "description": "zxc",
+        "done": false
+    }
+]

@@ -1,140 +1,162 @@
+📝 To-Do App (Python)
 
-🔧 1. Czego potrzebujesz
-📦 Podstawy techniczne
-📦 Python 3.10+
+A modular To-Do application built in Python to practice clean architecture, OOP principles, file persistence, and scalable project structure.
 
-Edytor kodu:
-🟢 Visual Studio Code
+This project evolves step-by-step from a simple console application to more advanced versions (GUI, Web, or Mobile).
 
-📚 Biblioteki (zależnie od wersji aplikacji)
-🔹 Wersja 1 – Konsolowa Nie potrzebujesz żadnych dodatkowych bibliotek.
-🔹 Wersja 2 – Okienkowa (GUI) tkinter (wbudowane w Python)
-🔹 Wersja 3 – Webowa | Flask lub Django
-🔹 Wersja 4 – Mobilna | Kivy lub BeeWare
+🚀 Project Goals
 
-📖 2. Czego musisz się nauczyć
-🟢 Absolutne podstawy
-zmienne
-listy i słowniki
-funkcje
-pętle
-instrukcje warunkowe
-obsługa plików (zapisywanie zadań)
+Practice Python fundamentals
 
-🟡 Poziom średni
-klasy (OOP)
-JSON
-podstawy UI (jeśli GUI)
-podstawy pracy z bazą danych (SQLite)
+Implement Object-Oriented Programming (OOP)
 
-🧠 3. Zaplanowanie funkcji aplikacji
+Work with JSON file storage
 
-Minimalna wersja To-Do:
-➕ dodawanie zadania
-📋 wyświetlanie zadań
-❌ usuwanie zadania
-✔ oznaczanie jako wykonane
-💾 zapisywanie do pliku
+Design clean project architecture
 
-Rozszerzona wersja:
-📅 termin wykonania
-⭐ priorytet
-🔍 filtrowanie
-📂 kategorie
-👤 logowanie użytkownika
+Prepare a scalable base for future expansion (GUI, Web, Mobile)
 
-🏗 4. Architektura projektu
-Przykładowa struktura:
+🛠 Tech Stack
 
+Python 3.10+
+
+JSON (data storage)
+
+Optional extensions:
+
+tkinter (Desktop GUI)
+
+Flask / Django (Web version)
+
+Kivy / BeeWare (Mobile version)
+
+📂 Project Structure
 todo_app/
 │
-├── main.py
-├── tasks.py
-├── storage.py
-├── data.json
+├── main.py        # Application entry point
+├── tasks.py       # Task and TaskManager logic
+├── storage.py     # Save / load logic (JSON)
+├── data.json      # Persistent storage
+✅ Features (Current Version)
+Core (MVP)
 
-Co robi każdy plik?
-main.py → uruchamia aplikację
-tasks.py → logika zadań
-storage.py → zapis/odczyt danych
-data.json → przechowywanie zadań
+➕ Add a task
 
-🔄 5. WORKFLOW (jak pracować nad projektem)
-🔹 Etap 1 – Plan
-Spisz funkcje aplikacji
-Zrób szkic jak ma działać
-Zdecyduj: konsola czy GUI?
+📋 View tasks
 
-🔹 Etap 2 – MVP (Minimum Viable Product)
-Zrób najprostszą wersję:
-Lista w Pythonie jako baza danych
-Menu tekstowe:
-1. Dodaj zadanie
-2. Pokaż zadania
-3. Usuń zadanie
-4. Wyjście
-Nie przejmuj się wyglądem.
+❌ Delete a task
 
-🔹 Etap 3 – Zapis do pliku
-Dodaj:
-zapis do JSON
-odczyt przy starcie programu
+✔ Mark task as completed
 
-🔹 Etap 4 – Refaktoryzacja
-podziel kod na funkcje
-potem na klasy
-popraw czytelność
+💾 Automatic saving to JSON
 
-🔹 Etap 5 – Rozbudowa
-Dodaj:
-priorytety
-daty
-filtrowanie
-GUI
-
-🗂 6. Schemat działania aplikacji
+🔄 Application Flow
 START
  ↓
-Wczytaj dane z pliku
+Load tasks from file
  ↓
-Pokaż menu
+Display menu
  ↓
-Użytkownik wybiera opcję
+User selects option
  ↓
-Wykonaj akcję
+Execute action
  ↓
-Zapisz zmiany
+Save changes
  ↓
-Powrót do menu
+Return to menu
+🧠 Concepts Practiced
+🟢 Fundamentals
 
-🚀 7. Jak możesz to rozwinąć później
-Skoro interesują Cię aplikacje mobilne:
-🔹 Opcja 1 – Desktop
-GUI w tkinter
+Variables
 
-🔹 Opcja 2 – Web
+Lists & dictionaries
+
+Functions
+
+Loops
+
+Conditionals
+
+File handling
+
+🟡 Intermediate
+
+Classes (OOP)
+
+Data serialization (JSON)
+
+Project modularization
+
+Clean architecture separation
+
+🏗 Development Roadmap
+Phase 1 – Console Version (Current)
+
+Fully working CLI application
+
+JSON persistence
+
+OOP architecture
+
+Phase 2 – Extended Features
+
+📅 Due dates
+
+⭐ Priority levels
+
+🔍 Filtering tasks
+
+📂 Categories
+
+Phase 3 – GUI Version
+
+Desktop app using tkinter
+
+Phase 4 – Web Version
+
 Backend: Flask
+
 Frontend: HTML + CSS
 
-🔹 Opcja 3 – Android
-Użyj:
-Kivy → generuje APK
+Phase 5 – Mobile Version
 
-📈 8. Jak zrobić z tego projekt do portfolio
-Dodaj:
-README
-screenshoty
-instrukcję instalacji
-wrzuć na GitHub
+Kivy → Generate Android APK
 
-Możesz potem zrobić:
-synchronizację online
-konto użytkownika
-API
+📦 Installation
+git clone https://github.com/your-username/todo-app.git
+cd todo-app
+python main.py
+📈 Future Improvements
 
-🎯 Plan nauki dla Ciebie (realny)
+User authentication
 
-Tydzień 1 → konsolowa wersja
-Tydzień 2 → zapis do JSON
-Tydzień 3 → GUI
-Tydzień 4 → wersja mobilna
+SQLite database integration
+
+REST API
+
+Online synchronization
+
+Cloud deployment
+
+🎯 Why This Project Matters
+
+This project demonstrates:
+
+Clean separation of concerns
+
+Scalable architecture
+
+Understanding of persistence
+
+Transition from procedural programming to OOP
+
+Readiness to expand into real-world applications
+
+📸 Screenshots
+
+(Add screenshots here when GUI version is ready)
+
+👨‍💻 Author
+
+Paweł Mróz
+Python Developer (learning path → Desktop → Web → Mobile)

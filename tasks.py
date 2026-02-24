@@ -1,26 +1,63 @@
-def add_task(tasks, task_name, task_description): #adding a new task
-    if task_name in tasks:
-        print("Task is already in the list!")
-    else:
-        tasks[task_name] = task_description
-        print("Task has been added!")
+class Task:
+    def __init__(self, name, description, done=False):
+        self.name = name
+        self.description = description
+        self.done = done
+        
+    def mark_done(self):
+        self.done = True
+        
+    def to_dict(self):
+        return {
+            "name": self.name,
+            "description": self.description
+        }
+        
+    @staticmethod
+    def from_dict(data):
+        return Task(
+            data["name"],
+            data["description"],
+            data.get("done", False)
+        )
+        
+class TaskManager: #clearing a class TaskManager, to manage all the tasks in the dictionary
+    def __init__(self):
+        self.tasks = []
+        
+    def add_task(self, name, description):
+        if any(task.name == name for task in self.tasks):
+            print("Task already exists!")
+            return
+        self.tasks.append(Task(name, description))
+        print("Task added!")
+    
+    def view_tasks(self): #view all the tasks
+        if not self.tasks:
+            print("No tasks available.")
+            return
+        for i, task in enumerate(self.tasks, 1):
+            status = "✔" if task.done else "✘"
+            print(f"{i}. {task.name} - {task.description} [{status}]")
+        
+    def delete_task(self, name): #delete a task
+        for task in self.tasks:
+            if task.name == name:
+                self.tasks.remove(task)
+                print("Task deleted!")
+                return
+        print("Task not found.")
 
-def view_task(tasks): #showing on the screen all the tasks
-    if not tasks:
-        print("No tasks to view")
-        return
-    else:    
-        for name, description in tasks.items():
-            print(f"Task: {name}, description: {description}") 
-        print("The list of tasks has been printed")
+    def mark_done(self, name): #mark one of the task as done
+        for task in self.tasks:
+            if task.name == name:
+                task.mark_done()
+                print("Task marked as done!")
+                return
+        print("Task not found.")
 
-def delete_task(tasks, task_name): #delete a task from the dictionary
-    if not tasks:
-        print("No tasks to delete")
-        return
-    else:
-        if task_name in tasks:
-            del tasks[task_name]
-            print(f"Task: {task_name} has been deleted.")
-        else:
-            print(f"No task names: {task_name} found")
+    def to_list(self):
+        return [task.to_dict() for task in self.tasks]
+
+    def load_from_list(self, data_list): #loading the dictionary from the data.json
+        self.tasks = [Task.from_dict(data) for data in data_list]

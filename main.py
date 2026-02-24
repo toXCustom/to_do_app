@@ -1,39 +1,51 @@
-from tasks import add_task, view_task, delete_task
+from tasks import TaskManager
 from storage import save_tasks, load_tasks
 
 def menu(): #calling the menu
-    print("-- Choose menu --")
+    print("\n--- TO DO MENU ---")
     print("1. Add task")
-    print("2. Show task")
+    print("2. Show tasks")
     print("3. Delete task")
-    print("4. Exit")
+    print("4. Mark task as done")
+    print("5. Exit")
     try:
-        chosen = int(input("Please choose the menu: "))
-        return chosen
-    except ValueError: #expecting a number/integer
-        print("Please enter a number!")
+        return int(input("Choose option: "))
+    except ValueError:
         return 0
 
-def main():    
-    tasks = load_tasks() #reading the data.json
+def main():
+    manager = TaskManager()
+    load_tasks(manager)
 
     while True:
-        chosen = menu()
-        if chosen == 1:
-            task_name = input("What is the task name?")
-            task_description = input("What is the task? Describe what to do")
-            add_task(tasks, task_name, task_description)
-            save_tasks(tasks)
-        elif chosen == 2:
-            view_task(tasks)
-        elif chosen == 3:
-            task_name = input("What is the task to delete?")
-            delete_task(tasks, task_name)
-            save_tasks(tasks)
-        elif chosen == 4:
-            break
-        else:
-            print("Invalid chove,m  try again.")
+        choice = menu()
 
-if __name__ == '__main__': #execyte main only when opened directly
+        if choice == 1:
+            name = input("Task name: ")
+            desc = input("Description: ")
+            manager.add_task(name, desc)
+            save_tasks(manager)
+
+        elif choice == 2:
+            manager.view_tasks()
+
+        elif choice == 3:
+            name = input("Task name to delete: ")
+            manager.delete_task(name)
+            save_tasks(manager)
+
+        elif choice == 4:
+            name = input("Task name to mark as done: ")
+            manager.mark_done(name)
+            save_tasks(manager)
+
+        elif choice == 5:
+            save_tasks(manager)
+            print("Goodbye!")
+            break
+
+        else:
+            print("Invalid option.")
+
+if __name__ == "__main__": #execyte main only when opened directly
     main()
