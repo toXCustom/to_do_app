@@ -1,7 +1,7 @@
 from tasks import add_task, view_task, delete_task
 from storage import save_tasks, load_tasks
 
-def menu():
+def menu(): #calling the menu
     print("-- Choose menu --")
     print("1. Add task")
     print("2. Show task")
@@ -10,12 +10,12 @@ def menu():
     try:
         chosen = int(input("Please choose the menu: "))
         return chosen
-    except ValueError:
+    except ValueError: #expecting a number/integer
         print("Please enter a number!")
         return 0
 
 def main():    
-    tasks = load_tasks()
+    tasks = load_tasks() #reading the data.json
 
     while True:
         chosen = menu()
@@ -35,5 +35,5 @@ def main():
         else:
             print("Invalid chove,m  try again.")
 
-if __name__ == '__main__':
+if __name__ == '__main__': #execyte main only when opened directly
     main()

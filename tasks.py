@@ -1,11 +1,11 @@
-def add_task(tasks, task_name, task_description):
+def add_task(tasks, task_name, task_description): #adding a new task
     if task_name in tasks:
         print("Task is already in the list!")
     else:
         tasks[task_name] = task_description
         print("Task has been added!")
 
-def view_task(tasks):
+def view_task(tasks): #showing on the screen all the tasks
     if not tasks:
         print("No tasks to view")
         return
@@ -14,7 +14,7 @@ def view_task(tasks):
             print(f"Task: {name}, description: {description}") 
         print("The list of tasks has been printed")
 
-def delete_task(tasks, task_name):
+def delete_task(tasks, task_name): #delete a task from the dictionary
     if not tasks:
         print("No tasks to delete")
         return
