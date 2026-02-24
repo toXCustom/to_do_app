@@ -31,12 +31,20 @@ Flask / Django (Web version)
 Kivy / BeeWare (Mobile version)
 
 📂 Project Structure
+
 todo_app/
+
 │
+
 ├── main.py        # Application entry point
+
 ├── tasks.py       # Task and TaskManager logic
+
 ├── storage.py     # Save / load logic (JSON)
+
 ├── data.json      # Persistent storage
+
+
 ✅ Features (Current Version)
 Core (MVP)
 
