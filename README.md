@@ -1,17 +1,7 @@
-Super pomysł 👍 Aplikacja To-Do w Pythonie to idealny projekt – możesz ją potem rozwinąć nawet w coś na telefon (wiem, że interesują Cię aplikacje mobilne 😉).
-
-Zrobię Ci pełną rozpiskę:
-
-✅ czego potrzebujesz
-✅ czego musisz się nauczyć
-✅ jak zaplanować projekt
-✅ workflow krok po kroku
-✅ jak to później rozwinąć
 
 🔧 1. Czego potrzebujesz
 📦 Podstawy techniczne
-
-Python 3.10+
+📦 Python 3.10+
 
 Edytor kodu:
 🟢 Visual Studio Code
