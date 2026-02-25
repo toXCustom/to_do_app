@@ -1,8 +1,11 @@
+from datetime import datetime, date
+
 class Task:
-    def __init__(self, name, description, done=False):
+    def __init__(self, name, description, done=False, due_date=None):
         self.name = name
         self.description = description
         self.done = done
+        self.due_date = due_date
         
     def mark_done(self):
         self.done = True
@@ -10,26 +13,41 @@ class Task:
     def to_dict(self):
         return {
             "name": self.name,
-            "description": self.description
+            "description": self.description,
+            "done": self.done,
+            "due_date": self.due_date
         }
+
+    @property
+    def is_overdue(self):
+        if self.due_date is None:
+            return False
+        try:
+            due = datetime.strptime(self.due_date, "%Y-%m-%d").date()
+            return date.today() > due and not self.done
+        except ValueError:
+            # Invalid date format, treat as not overdue
+            return False
         
     @staticmethod
     def from_dict(data):
         return Task(
             data["name"],
             data["description"],
-            data.get("done", False)
+            data.get("done", False),
+            data.get("due_date", None)
         )
         
 class TaskManager: #clearing a class TaskManager, to manage all the tasks in the dictionary
     def __init__(self):
         self.tasks = []
         
-    def add_task(self, name, description):
+    def add_task(self, name, description, due_date=None):
         if any(task.name == name for task in self.tasks):
             print("Task already exists!")
             return
-        self.tasks.append(Task(name, description))
+        task = Task(name, description, False, due_date)
+        self.tasks.append(task)
         print("Task added!")
     
     def view_tasks(self): #view all the tasks
@@ -38,7 +56,14 @@ class TaskManager: #clearing a class TaskManager, to manage all the tasks in the
             return
         for i, task in enumerate(self.tasks, 1):
             status = "✔" if task.done else "✘"
-            print(f"{i}. {task.name} - {task.description} [{status}]")
+            if task.done:
+                it_is_done = "Done:"
+                overdue = ""
+            else:
+                it_is_done = "Due:"
+                overdue = " 🔴 OVERDUE" if task.is_overdue else ""
+            due = task.due_date if task.due_date else "No due date"
+            print(f"{i}. [{status}] {task.name} - {task.description} ({it_is_done} {due}{overdue})")
         
     def delete_task(self, name): #delete a task
         for task in self.tasks:

@@ -1,6 +1,6 @@
 from tasks import TaskManager
 from storage import save_tasks, load_tasks
-from datetime import datetime
+from datetime import datetime, date
 
 def menu(): #calling the menu
     print("\n--- TO DO MENU ---")
