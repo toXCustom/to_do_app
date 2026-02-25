@@ -54,7 +54,22 @@ class TaskManager: #clearing a class TaskManager, to manage all the tasks in the
         if not self.tasks:
             print("No tasks available.")
             return
-        for i, task in enumerate(self.tasks, 1):
+        
+        #Sort tasks: overdue first, then by due date (earliest first), then tasks without due date
+        def sort_key(task):
+            if task.due_date is None:
+                # Tasks without due date go last
+                return (1, datetime.max)
+            try:
+                due = datetime.strptime(task.due_date, "%Y-%m-%d").date()
+            except ValueError:
+                due = datetime.max  # invalid date → put last
+            #Overdue tasks get priority
+            overdue_priority = 0 if task.is_overdue else 1
+            return (overdue_priority, due)
+        sorted_tasks = sorted(self.tasks, key=sort_key)
+        
+        for i, task in enumerate(sorted_tasks, 1):
             status = "✔" if task.done else "✘"
             if task.done:
                 it_is_done = "Done:"
