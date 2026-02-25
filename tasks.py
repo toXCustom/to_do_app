@@ -29,6 +29,18 @@ class Task:
             # Invalid date format, treat as not overdue
             return False
         
+    @property
+    def days_remaining(self):
+        if self.due_date is None:
+            return None
+        try:
+            due = datetime.strptime(self.due_date, "%Y-%m-%d").date()
+            delta = (due - date.today()).days
+            return delta
+        except ValueError:
+            # Invalid date format, treat as not overdue
+            return None
+            
     @staticmethod
     def from_dict(data):
         return Task(
@@ -74,11 +86,21 @@ class TaskManager: #clearing a class TaskManager, to manage all the tasks in the
             if task.done:
                 it_is_done = "Done:"
                 overdue = ""
+                days_remain_str = ""
             else:
                 it_is_done = "Due:"
                 overdue = " 🔴 OVERDUE" if task.is_overdue else ""
+                if task.days_remaining is not None:
+                    if task.days_remaining < 0:
+                        days_remain_str = f" ({-task.days_remaining} days overdue)"
+                    elif task.days_remaining == 0:
+                        days_remain_str = " (Due today)"
+                    else:
+                        days_remain_str = f" ({task.days_remaining} days remaining)"
+                else:
+                    days_remain_str = ""
             due = task.due_date if task.due_date else "No due date"
-            print(f"{i}. [{status}] {task.name} - {task.description} ({it_is_done} {due}{overdue})")
+            print(f"{i}. [{status}] {task.name} - {task.description} ({it_is_done} {due}{days_remain_str}{overdue})")
         
     def delete_task(self, name): #delete a task
         for task in self.tasks:
