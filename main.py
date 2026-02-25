@@ -1,5 +1,6 @@
 from tasks import TaskManager
 from storage import save_tasks, load_tasks
+from datetime import datetime
 
 def menu(): #calling the menu
     print("\n--- TO DO MENU ---")
@@ -22,8 +23,20 @@ def main():
 
         if choice == 1:
             name = input("Task name: ")
-            desc = input("Description: ")
-            manager.add_task(name, desc)
+            description = input("Description: ")
+            due_date = input("Due date (YYYY-MM-DD) or leave empty: ")
+            
+            if due_date == "":
+                due_date = None
+            
+            try: #validate date format
+                if due_date:
+                    datetime.strptime(due_date, "%Y-%m-%d")
+            except ValueError:
+                print("Invalid date format. Use YYYY-MM-DD.")
+                continue #stops this function and goes back to menu
+
+            manager.add_task(name, description, due_date)
             save_tasks(manager)
 
         elif choice == 2:
