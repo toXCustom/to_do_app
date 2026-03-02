@@ -1,149 +1,122 @@
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import simpledialog, messagebox
 from tasks import TaskManager
-from storage import load_tasks, save_tasks
-from datetime import datetime, date
-
+from storage import save_tasks, load_tasks
+from datetime import datetime
 
 class TodoApp:
     def __init__(self, root):
         self.root = root
         self.root.title("To-Do App")
-
         self.manager = TaskManager()
         load_tasks(self.manager)
 
-        # --- UI ELEMENTS ---
+        # Sorting
+        self.sort_type = tk.StringVar(value="due_date")  # due_date, creation, priority, alphabetical
+        sort_options = ["due_date", "creation_date", "priority", "alphabetical"]
+        tk.Label(root, text="Sort by:").pack()
+        self.sort_menu = tk.OptionMenu(root, self.sort_type, *sort_options, command=lambda _: self.refresh_tasks())
+        self.sort_menu.pack()
 
-        self.frame = tk.Frame(root)
-        self.frame.pack(pady=10)
+        # Filtering
+        self.filter_type = tk.StringVar(value="All")
+        filter_options = ["All", "Active", "Completed", "Overdue"]
+        tk.Label(root, text="Show:").pack()
+        self.filter_menu = tk.OptionMenu(root, self.filter_type, *filter_options, command=lambda _: self.refresh_tasks())
+        self.filter_menu.pack()
 
-        self.task_listbox = tk.Listbox(self.frame, width=60, height=15)
-        self.task_listbox.pack()
-
-        self.refresh_tasks()
+        # Task List
+        self.task_listbox = tk.Listbox(root, width=100)
+        self.task_listbox.pack(pady=10)
 
         # Buttons
-        self.add_button = tk.Button(root, text="Add Task", command=self.add_task)
-        self.add_button.pack(pady=5)
+        tk.Button(root, text="Add Task", command=self.add_task_gui).pack(side=tk.LEFT, padx=5)
+        tk.Button(root, text="Delete Task", command=self.delete_task_gui).pack(side=tk.LEFT, padx=5)
+        tk.Button(root, text="Mark Done", command=self.mark_done_gui).pack(side=tk.LEFT, padx=5)
 
-        self.delete_button = tk.Button(root, text="Delete Task", command=self.delete_task)
-        self.delete_button.pack(pady=5)
+        self.refresh_tasks()
 
-        self.done_button = tk.Button(root, text="Mark as Done", command=self.mark_done)
-        self.done_button.pack(pady=5)
-        
+    # ---------- GUI Methods ----------
+    def add_task_gui(self):
+        name = simpledialog.askstring("Task Name", "Enter task name:")
+        if not name:
+            return
+        description = simpledialog.askstring("Task Description", "Enter task description:") or ""
+        due_date = simpledialog.askstring("Due Date", "Enter due date YYYY-MM-DD (optional):") or None
+        priority = simpledialog.askstring("Priority", "Enter priority (High/Medium/Low):", initialvalue="Medium") or "Medium"
+
+        self.manager.add_task(name, description, due_date, priority)
+        self.refresh_tasks()
+        save_tasks(self.manager)
+
+    def delete_task_gui(self):
+        selected_index = self.task_listbox.curselection()
+        if not selected_index:
+            messagebox.showinfo("Delete Task", "Select a task to delete.")
+            return
+        task_text = self.task_listbox.get(selected_index[0])
+        task_name = task_text.split("] ")[1].split(" - ")[0]
+        self.manager.delete_task(task_name)
+        self.refresh_tasks()
+        save_tasks(self.manager)
+
+    def mark_done_gui(self):
+        selected_index = self.task_listbox.curselection()
+        if not selected_index:
+            messagebox.showinfo("Mark Done", "Select a task to mark done.")
+            return
+        task_text = self.task_listbox.get(selected_index[0])
+        task_name = task_text.split("] ")[1].split(" - ")[0]
+        self.manager.mark_done(task_name)
+        self.refresh_tasks()
+        save_tasks(self.manager)
+
+    # ---------- Filtering & Sorting ----------
+    def get_filtered_tasks(self):
+        value = self.filter_type.get()
+        if value == "Active":
+            return [t for t in self.manager.tasks if not t.done]
+        if value == "Completed":
+            return [t for t in self.manager.tasks if t.done]
+        if value == "Overdue":
+            return [t for t in self.manager.tasks if t.is_overdue]
+        return self.manager.tasks
+
     def get_sorted_tasks(self):
+        tasks = self.get_filtered_tasks()
+        sort_type = self.sort_type.get()
+
         def sort_key(task):
-            # Completed tasks go last
-            if task.done:
-                return (3, datetime.max)
+            if sort_type == "due_date":
+                if task.due_date:
+                    return datetime.strptime(task.due_date, "%Y-%m-%d")
+                return datetime.max
+            elif sort_type == "creation_date":
+                return datetime.strptime(task.created_at, "%Y-%m-%d %H:%M:%S")
+            elif sort_type == "priority":
+                mapping = {"High": 1, "Medium": 2, "Low": 3}
+                return mapping.get(task.priority, 2)
+            else:  # alphabetical
+                return task.name.lower()
 
-            # Tasks without due date
-            if not task.due_date:
-                return (2, datetime.max)
+        return sorted(tasks, key=sort_key)
 
-            # Tasks with due date
-            try:
-                due = datetime.strptime(task.due_date, "%Y-%m-%d")
-            except ValueError:
-                return (2, datetime.max)
-
-            # Overdue tasks first
-            if task.days_remaining is not None and task.days_remaining < 0:
-                return (0, due)
-
-            # Upcoming tasks
-            return (1, due)
-
-        return sorted(self.manager.tasks, key=sort_key)
-        
+    # ---------- Refresh List ----------
     def refresh_tasks(self):
+        self.manager.update_all()
         self.task_listbox.delete(0, tk.END)
-
-        sorted_tasks = self.get_sorted_tasks()
-
-        for task in sorted_tasks:
+        for task in self.get_sorted_tasks():
             status = "✔" if task.done else "✘"
-            due = task.due_date if task.due_date else "No due date"
-
-            days_info = ""
-            if not task.done and task.days_remaining is not None:
-                if task.days_remaining < 0:
-                    days_info = f" ({-task.days_remaining} days overdue 🔴)"
-                elif task.days_remaining == 0:
-                    days_info = " (Due today)"
-                else:
-                    days_info = f" ({task.days_remaining} days remaining)"
-
-            display_text = (
-                f"[{status}] {task.name} - {task.description} "
-                f"(Due: {due}){days_info}"
+            due = task.due_date or "No due date"
+            days_rem = f"({task.days_remaining} days left)" if task.days_remaining is not None else ""
+            overdue = " 🔴 OVERDUE" if task.is_overdue else ""
+            self.task_listbox.insert(
+                tk.END,
+                f"[{status}] {task.name} - {task.description} {days_rem} {due} {overdue}"
             )
 
-            self.task_listbox.insert(tk.END, display_text)
 
-            # Color overdue tasks red
-            index = self.task_listbox.size() - 1
-            if not task.done and task.days_remaining is not None:
-                if task.days_remaining < 0:
-                    self.task_listbox.itemconfig(index, fg="red")
-
-    def add_task(self):
-        self.new_window = tk.Toplevel(self.root)
-        self.new_window.title("Add Task")
-
-        tk.Label(self.new_window, text="Name").pack()
-        name_entry = tk.Entry(self.new_window)
-        name_entry.pack()
-
-        tk.Label(self.new_window, text="Description").pack()
-        desc_entry = tk.Entry(self.new_window)
-        desc_entry.pack()
-
-        tk.Label(self.new_window, text="Due Date (YYYY-MM-DD)").pack()
-        due_entry = tk.Entry(self.new_window)
-        due_entry.pack()
-
-        def save():
-            name = name_entry.get()
-            description = desc_entry.get()
-            due_date = due_entry.get() or None
-
-            if not name:
-                messagebox.showerror("Error", "Task name is required")
-                return
-
-            self.manager.add_task(name, description, due_date)
-            save_tasks(self.manager)
-            self.refresh_tasks()
-            self.new_window.destroy()
-
-        tk.Button(self.new_window, text="Save", command=save).pack(pady=5)
-
-    def delete_task(self):
-        selected = self.task_listbox.curselection()
-        if not selected:
-            messagebox.showwarning("Warning", "Select a task first")
-            return
-
-        index = selected[0]
-        self.manager.tasks.pop(index)
-        save_tasks(self.manager)
-        self.refresh_tasks()
-
-    def mark_done(self):
-        selected = self.task_listbox.curselection()
-        if not selected:
-            messagebox.showwarning("Warning", "Select a task first")
-            return
-
-        index = selected[0]
-        self.manager.tasks[index].done = True
-        save_tasks(self.manager)
-        self.refresh_tasks()
-
-
+# ---------- Run App ----------
 if __name__ == "__main__":
     root = tk.Tk()
     app = TodoApp(root)
