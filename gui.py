@@ -10,6 +10,24 @@ class TodoApp:
         self.root.title("To-Do App")
         self.manager = TaskManager()
         load_tasks(self.manager)
+        
+        self.dark_mode = False
+
+        self.light_theme = {
+            "bg": "#f0f0f0",
+            "fg": "#000000",
+            "button_bg": "#e0e0e0",
+            "list_bg": "#ffffff",
+            "list_fg": "#000000"
+        }
+
+        self.dark_theme = {
+            "bg": "#1e1e1e",
+            "fg": "#ffffff",
+            "button_bg": "#2d2d2d",
+            "list_bg": "#252526",
+            "list_fg": "#ffffff"
+        }
 
         # Sorting
         self.sort_type = tk.StringVar(value="due_date")  # due_date, creation, priority, alphabetical
@@ -24,6 +42,10 @@ class TodoApp:
         tk.Label(root, text="Show:").pack()
         self.filter_menu = tk.OptionMenu(root, self.filter_type, *filter_options, command=lambda _: self.refresh_tasks())
         self.filter_menu.pack()
+        
+        # Light/Dark Mode
+        self.theme_button = tk.Button(root, text="🌙 Dark Mode", command=self.toggle_theme)
+        self.theme_button.pack(pady=5)
 
         # Task List
         self.task_listbox = tk.Listbox(root, width=100)
@@ -34,6 +56,7 @@ class TodoApp:
         tk.Button(root, text="Delete Task", command=self.delete_task_gui).pack(side=tk.LEFT, padx=5)
         tk.Button(root, text="Mark Done", command=self.mark_done_gui).pack(side=tk.LEFT, padx=5)
 
+        self.apply_theme()
         self.refresh_tasks()
 
     # ---------- GUI Methods ----------
@@ -70,6 +93,34 @@ class TodoApp:
         self.manager.mark_done(task_name)
         self.refresh_tasks()
         save_tasks(self.manager)
+
+    # ---------- Toggle Light/Dark Theme ----------
+    def toggle_theme(self):
+        self.dark_mode = not self.dark_mode
+        if self.dark_mode:
+            self.theme_button.config(text="☀ Light Mode")
+        else:
+            self.theme_button.config(text="🌙 Dark Mode")
+        self.apply_theme()
+
+
+    def apply_theme(self):
+        theme = self.dark_theme if self.dark_mode else self.light_theme
+
+        # Root window
+        self.root.configure(bg=theme["bg"])
+
+        # Update all children widgets
+        for widget in self.root.winfo_children():
+            if isinstance(widget, tk.Label):
+                widget.config(bg=theme["bg"], fg=theme["fg"])
+            elif isinstance(widget, tk.Button):
+                widget.config(bg=theme["button_bg"], fg=theme["fg"],
+                            activebackground=theme["button_bg"])
+            elif isinstance(widget, tk.OptionMenu):
+                widget.config(bg=theme["button_bg"], fg=theme["fg"])
+            elif isinstance(widget, tk.Listbox):
+                widget.config(bg=theme["list_bg"], fg=theme["list_fg"])
 
     # ---------- Filtering & Sorting ----------
     def get_filtered_tasks(self):
