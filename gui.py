@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import simpledialog, messagebox
 from tasks import TaskManager
-from storage import save_tasks, load_tasks
+from storage import save_tasks, load_tasks, save_config, load_config
 from datetime import datetime
 
 class TodoApp:
@@ -11,7 +11,7 @@ class TodoApp:
         self.manager = TaskManager()
         load_tasks(self.manager)
         
-        self.dark_mode = False
+        self.dark_mode = load_config()
 
         self.light_theme = {
             "bg": "#f0f0f0",
@@ -45,6 +45,8 @@ class TodoApp:
         
         # Light/Dark Mode
         self.theme_button = tk.Button(root, text="🌙 Dark Mode", command=self.toggle_theme)
+        if self.dark_mode:
+            self.theme_button.config(text="☀ Light Mode")
         self.theme_button.pack(pady=5)
 
         # Task List
@@ -97,10 +99,13 @@ class TodoApp:
     # ---------- Toggle Light/Dark Theme ----------
     def toggle_theme(self):
         self.dark_mode = not self.dark_mode
+        save_config(self.dark_mode)  # 💾 SAVE HERE
+
         if self.dark_mode:
             self.theme_button.config(text="☀ Light Mode")
         else:
             self.theme_button.config(text="🌙 Dark Mode")
+
         self.apply_theme()
 
 
