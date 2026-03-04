@@ -3,6 +3,7 @@ from tkinter import simpledialog, messagebox
 from tasks import TaskManager
 from storage import save_tasks, load_tasks, save_config, load_config
 from datetime import datetime
+from tkcalendar import Calendar
 
 class TodoApp:
     def __init__(self, root):
@@ -67,7 +68,11 @@ class TodoApp:
         if not name:
             return
         description = simpledialog.askstring("Task Description", "Enter task description:") or ""
-        due_date = simpledialog.askstring("Due Date", "Enter due date YYYY-MM-DD (optional):") or None
+        use_due = messagebox.askyesno("Due Date", "Do you want to set a due date?")
+        if use_due:
+            due_date = self.open_calendar()
+        else:
+            due_date = None
         priority = simpledialog.askstring("Priority", "Enter priority (High/Medium/Low):", initialvalue="Medium") or "Medium"
 
         self.manager.add_task(name, description, due_date, priority)
@@ -75,15 +80,25 @@ class TodoApp:
         save_tasks(self.manager)
 
     def delete_task_gui(self):
-        selected_index = self.task_listbox.curselection()
-        if not selected_index:
-            messagebox.showinfo("Delete Task", "Select a task to delete.")
+        selected = self.task_listbox.curselection()
+
+        if not selected:
+            return  # nothing selected
+
+        index = selected[0]
+
+        # Get currently displayed tasks (filtered + sorted)
+        visible_tasks = self.get_sorted_tasks()
+
+        if index >= len(visible_tasks):
             return
-        task_text = self.task_listbox.get(selected_index[0])
-        task_name = task_text.split("] ")[1].split(" - ")[0]
-        self.manager.delete_task(task_name)
+
+        task_to_delete = visible_tasks[index]
+
+        # Remove from real manager list
+        self.manager.tasks.remove(task_to_delete)
+
         self.refresh_tasks()
-        save_tasks(self.manager)
 
     def mark_done_gui(self):
         selected_index = self.task_listbox.curselection()
@@ -144,32 +159,100 @@ class TodoApp:
 
         def sort_key(task):
             if sort_type == "due_date":
-                if task.due_date:
-                    return datetime.strptime(task.due_date, "%Y-%m-%d")
-                return datetime.max
+                return task.due_date if task.due_date else datetime.max.date()
+
             elif sort_type == "creation_date":
-                return datetime.strptime(task.created_at, "%Y-%m-%d %H:%M:%S")
+                return task.created_at  # must already be datetime
+
             elif sort_type == "priority":
                 mapping = {"High": 1, "Medium": 2, "Low": 3}
                 return mapping.get(task.priority, 2)
+
             else:  # alphabetical
                 return task.name.lower()
 
         return sorted(tasks, key=sort_key)
+    
+    # ---------- Calendar selector ----------
+    def open_calendar(self):
+        top = tk.Toplevel(self.root)
+        top.title("Select Due Date")
+        top.grab_set()  # make it modal
+
+        cal = Calendar(top, selectmode="day", date_pattern="yyyy-mm-dd")
+        cal.pack(pady=10)
+
+        selected_date = tk.StringVar()
+
+        def confirm_date():
+            selected_date.set(cal.get_date())
+            top.destroy()
+
+        tk.Button(top, text="Select", command=confirm_date).pack(pady=5)
+
+        self.root.wait_window(top)
+
+        return selected_date.get()
 
     # ---------- Refresh List ----------
     def refresh_tasks(self):
-        self.manager.update_all()
         self.task_listbox.delete(0, tk.END)
-        for task in self.get_sorted_tasks():
+
+        tasks = self.get_sorted_tasks()
+
+        for index, task in enumerate(tasks):
+
             status = "✔" if task.done else "✘"
-            due = task.due_date or "No due date"
-            days_rem = f"({task.days_remaining} days left)" if task.days_remaining is not None else ""
-            overdue = " 🔴 OVERDUE" if task.is_overdue else ""
-            self.task_listbox.insert(
-                tk.END,
-                f"[{status}] {task.name} - {task.description} {days_rem} {due} {overdue}"
+
+            # ---- Due Date Info ----
+            if task.due_date:
+
+                # Safety conversion (only if still string)
+                if isinstance(task.due_date, str):
+                    task.due_date = datetime.strptime(task.due_date, "%Y-%m-%d").date()
+
+                due_str = f"Due: {task.due_date.strftime('%Y-%m-%d')}"
+
+                days_left = (task.due_date - datetime.now().date()).days
+
+                if task.done:
+                    days_info = ""
+                elif days_left > 0:
+                    days_info = f" | {days_left} days left"
+                elif days_left == 0:
+                    days_info = " | Due today"
+                else:
+                    days_info = f" | {abs(days_left)} days overdue"
+            else:
+                due_str = "No due date"
+                days_info = ""
+
+            # ---- Full Display Text ----
+            display_text = (
+                f"[{status}] "
+                f"{task.name} "
+                f"(Priority: {task.priority})\n"
+                f"   {task.description}\n"
+                f"   {due_str}{days_info}"
             )
+
+            self.task_listbox.insert(tk.END, display_text)
+
+            # ---- Coloring ----
+            if task.done:
+                self.task_listbox.itemconfig(index, fg="gray")
+
+            elif task.due_date and not task.done and task.due_date < datetime.now().date():
+                self.task_listbox.itemconfig(index, fg="red")
+
+            elif task.priority == "High":
+                self.task_listbox.itemconfig(index, fg="#ff4d4d")
+
+            elif task.priority == "Medium":
+                self.task_listbox.itemconfig(index, fg="#ffaa00")
+
+            elif task.priority == "Low":
+                self.task_listbox.itemconfig(index, fg="#4caf50")
 
 
 # ---------- Run App ----------

@@ -12,15 +12,9 @@ class Task:
 
     def update_status(self):
         if self.due_date:
-            try:
-                due = datetime.strptime(self.due_date, "%Y-%m-%d")
-                self.days_remaining = (due - datetime.now()).days
-                self.is_overdue = not self.done and self.days_remaining < 0
-            except ValueError:
-                self.days_remaining = None
-                self.is_overdue = False
+            # self.due_date is already a datetime.date object
+            self.is_overdue = datetime.now().date() > self.due_date
         else:
-            self.days_remaining = None
             self.is_overdue = False
 
     def to_dict(self):
@@ -51,7 +45,10 @@ class TaskManager:
     def __init__(self):
         self.tasks = []
 
-    def add_task(self, name, description="", due_date=None, priority="Medium"):
+    def add_task(self, name, description, due_date=None, priority="Medium"):
+        if due_date:
+            due_date = datetime.strptime(due_date, "%Y-%m-%d").date()
+
         task = Task(name, description, due_date, priority)
         self.tasks.append(task)
 

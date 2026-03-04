@@ -33,17 +33,11 @@ Kivy / BeeWare (Mobile version)
 📂 Project Structure
 
 todo_app/
-
 │
-
 ├── main.py        # Application entry point
-
 ├── tasks.py       # Task and TaskManager logic
-
 ├── storage.py     # Save / load logic (JSON)
-
 ├── data.json      # Persistent storage
-
 
 ✅ Features (Current Version)
 Core (MVP)
@@ -168,3 +162,29 @@ Readiness to expand into real-world applications
 
 Paweł Mróz
 Python Developer (learning path → Desktop → Web → Mobile)
+
+-----
+
+🎯 What You Now Have
+
+You can:
+
+Sort by:
+- Due date (smart grouping)
+- Creation date
+- Priority
+- Alphabetical
+
+Filter:
+- All tasks
+- Active
+- Completed
+- Overdue
+
+🚀 Your App Is Now:
+✔ Multi-criteria sorting
+✔ Multi-filter system
+✔ Priority system
+✔ Creation timestamps
+✔ GUI controls
+✔ Smart overdue logic
