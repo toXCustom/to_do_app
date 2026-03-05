@@ -188,3 +188,19 @@ Filter:
 ✔ Creation timestamps
 ✔ GUI controls
 ✔ Smart overdue logic
+
+
+--- version 0.1.100 ---
+Changes:
+- from writing the date to pick it up from the calendar directly
+- the priority is shown in the list of the tasks
+- priority right now will determine the color on how the task will be shown (Overdue always red)
+
+Bug fixed:
+- delete task button was not working, right now it's back and working again
+
+--- version 0.1.101 ---
+Changes:
+
+
+Bug fixed:

@@ -25,38 +25,40 @@ def load_tasks(manager):
         with open("tasks.json", "r") as file:
             data = json.load(file)
 
-            for task_data in data:
+        for task_data in data:
 
-                due_date = task_data.get("due_date")
+            due = task_data.get("due_date")
 
-                # 🔥 CONVERT STRING → DATE HERE
-                if due_date:
-                    due_date = datetime.strptime(due_date, "%Y-%m-%d").date()
+            # convert string → date
+            if due:
+                due = datetime.strptime(due, "%Y-%m-%d").date()
 
-                task = Task(
-                    task_data["name"],
-                    task_data["description"],
-                    due_date,
-                    task_data["priority"],
-                    task_data["done"]
-                )
+            task = Task(
+                task_data["name"],
+                task_data.get("description", ""),
+                due,
+                task_data.get("priority", "Medium")
+            )
 
-                manager.tasks.append(task)
+            task.done = task_data.get("done", False)
+
+            manager.tasks.append(task)
 
     except FileNotFoundError:
         pass
         
-def save_config(dark_mode: bool):
-    import json
+def save_config(config):
     with open(CONFIG_FILE, "w") as f:
-        json.dump({"dark_mode": dark_mode}, f, indent=4)
+        json.dump(config, f)
 
 
 def load_config():
-    import json
     try:
         with open(CONFIG_FILE, "r") as f:
-            data = json.load(f)
-            return data.get("dark_mode", False)
-    except FileNotFoundError:
-        return False
+            return json.load(f)
+    except:
+        return {
+            "dark_mode": False,
+            "sort": "due_date",
+            "filter": "All"
+        }

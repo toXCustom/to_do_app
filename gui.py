@@ -10,9 +10,18 @@ class TodoApp:
         self.root = root
         self.root.title("To-Do App")
         self.manager = TaskManager()
+        
+        # Search
+        self.search_var = tk.StringVar()
+        self.search_var.trace_add("write", lambda *args: self.refresh_tasks())
+        
         load_tasks(self.manager)
         
-        self.dark_mode = load_config()
+        config = load_config()
+
+        self.dark_mode = config.get("dark_mode", False)
+        self.sort_type = tk.StringVar(value=config.get("sort", "due_date"))
+        self.filter_type = tk.StringVar(value=config.get("filter", "All"))
 
         self.light_theme = {
             "bg": "#f0f0f0",
@@ -29,20 +38,45 @@ class TodoApp:
             "list_bg": "#252526",
             "list_fg": "#ffffff"
         }
+        
+        # Search
+        search_frame = tk.Frame(root)
+        search_frame.pack(pady=5)
+
+        tk.Label(search_frame, text="Search:").pack(side=tk.LEFT, padx=5)
+
+        self.search_entry = tk.Entry(search_frame, textvariable=self.search_var, width=40)
+        self.search_entry.pack(side=tk.LEFT)
 
         # Sorting
-        self.sort_type = tk.StringVar(value="due_date")  # due_date, creation, priority, alphabetical
         sort_options = ["due_date", "creation_date", "priority", "alphabetical"]
-        tk.Label(root, text="Sort by:").pack()
-        self.sort_menu = tk.OptionMenu(root, self.sort_type, *sort_options, command=lambda _: self.refresh_tasks())
-        self.sort_menu.pack()
+        sort_frame = tk.Frame(root)
+        sort_frame.pack(pady=5)
+
+        tk.Label(sort_frame, text="Sort by:").pack(side=tk.LEFT, padx=5)
+
+        self.sort_menu = tk.OptionMenu(
+            sort_frame,
+            self.sort_type,
+            *sort_options,
+            command=lambda _: self.refresh_tasks()
+        )
+        self.sort_menu.pack(side=tk.LEFT)
 
         # Filtering
-        self.filter_type = tk.StringVar(value="All")
         filter_options = ["All", "Active", "Completed", "Overdue"]
-        tk.Label(root, text="Show:").pack()
-        self.filter_menu = tk.OptionMenu(root, self.filter_type, *filter_options, command=lambda _: self.refresh_tasks())
-        self.filter_menu.pack()
+        filter_frame = tk.Frame(root)
+        filter_frame.pack(pady=5)
+
+        tk.Label(filter_frame, text="Show:").pack(side=tk.LEFT, padx=5)
+
+        self.filter_menu = tk.OptionMenu(
+            filter_frame,
+            self.filter_type,
+            *filter_options,
+            command=lambda _: self.refresh_tasks()
+        )
+        self.filter_menu.pack(side=tk.LEFT)
         
         # Light/Dark Mode
         self.theme_button = tk.Button(root, text="🌙 Dark Mode", command=self.toggle_theme)
@@ -114,7 +148,7 @@ class TodoApp:
     # ---------- Toggle Light/Dark Theme ----------
     def toggle_theme(self):
         self.dark_mode = not self.dark_mode
-        save_config(self.dark_mode)  # 💾 SAVE HERE
+        self.save_ui_config() # 💾 SAVE HERE
 
         if self.dark_mode:
             self.theme_button.config(text="☀ Light Mode")
@@ -141,17 +175,51 @@ class TodoApp:
                 widget.config(bg=theme["button_bg"], fg=theme["fg"])
             elif isinstance(widget, tk.Listbox):
                 widget.config(bg=theme["list_bg"], fg=theme["list_fg"])
+                
+    def save_ui_config(self):
+        config = {
+            "dark_mode": self.dark_mode,
+            "sort": self.sort_type.get(),
+            "filter": self.filter_type.get()
+        }
+        save_config(config)
+
+
+    def on_sort_change(self, value):
+        self.refresh_tasks()
+        self.save_ui_config()
+
+
+    def on_filter_change(self, value):
+        self.refresh_tasks()
+        self.save_ui_config()
 
     # ---------- Filtering & Sorting ----------
     def get_filtered_tasks(self):
         value = self.filter_type.get()
+        tasks = self.manager.tasks
+
+        # Filter status
         if value == "Active":
-            return [t for t in self.manager.tasks if not t.done]
-        if value == "Completed":
-            return [t for t in self.manager.tasks if t.done]
-        if value == "Overdue":
-            return [t for t in self.manager.tasks if t.is_overdue]
-        return self.manager.tasks
+            tasks = [t for t in tasks if not t.done]
+
+        elif value == "Completed":
+            tasks = [t for t in tasks if t.done]
+
+        elif value == "Overdue":
+            tasks = [t for t in tasks if t.is_overdue]
+
+        # 🔍 Search filter
+        search = self.search_var.get().lower().strip()
+
+        if search:
+            tasks = [
+                t for t in tasks
+                if search in t.name.lower()
+                or search in t.description.lower()
+            ]
+
+        return tasks
 
     def get_sorted_tasks(self):
         tasks = self.get_filtered_tasks()
