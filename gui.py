@@ -9,6 +9,7 @@ class TodoApp:
     def __init__(self, root):
         self.root = root
         self.root.title("To-Do App")
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.manager = TaskManager()
         
         # Search
@@ -95,6 +96,8 @@ class TodoApp:
 
         self.apply_theme()
         self.refresh_tasks()
+        
+        self.auto_save()
 
     # ---------- GUI Methods ----------
     def add_task_gui(self):
@@ -117,11 +120,9 @@ class TodoApp:
         selected = self.task_listbox.curselection()
 
         if not selected:
-            return  # nothing selected
+            return
 
         index = selected[0]
-
-        # Get currently displayed tasks (filtered + sorted)
         visible_tasks = self.get_sorted_tasks()
 
         if index >= len(visible_tasks):
@@ -129,9 +130,9 @@ class TodoApp:
 
         task_to_delete = visible_tasks[index]
 
-        # Remove from real manager list
         self.manager.tasks.remove(task_to_delete)
 
+        save_tasks(self.manager)
         self.refresh_tasks()
 
     def mark_done_gui(self):
@@ -139,9 +140,20 @@ class TodoApp:
         if not selected_index:
             messagebox.showinfo("Mark Done", "Select a task to mark done.")
             return
-        task_text = self.task_listbox.get(selected_index[0])
-        task_name = task_text.split("] ")[1].split(" - ")[0]
-        self.manager.mark_done(task_name)
+
+        index = selected_index[0]
+
+        # Get currently displayed tasks (filtered + sorted)
+        visible_tasks = self.get_sorted_tasks()
+
+        if index >= len(visible_tasks):
+            return
+
+        task_to_mark = visible_tasks[index]
+
+        # Mark the task as done
+        task_to_mark.done = True
+
         self.refresh_tasks()
         save_tasks(self.manager)
 
@@ -321,6 +333,17 @@ class TodoApp:
 
             elif task.priority == "Low":
                 self.task_listbox.itemconfig(index, fg="#4caf50")
+      
+    # ---------- Saving automaticlly every 10 seconds ----------   
+    def auto_save(self):
+        save_tasks(self.manager)
+        self.root.after(10000, self.auto_save)
+        
+    # ---------- Saving after closure of the application ----------       
+    def on_close(self):
+        save_tasks(self.manager)
+        save_config(self.dark_mode)
+        self.root.destroy()
 
 
 # ---------- Run App ----------

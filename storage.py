@@ -2,9 +2,13 @@ import json
 from datetime import datetime
 from tasks import Task
 
-FILENAME = "data.json"
+TASKS_FILE = "tasks.json"
 CONFIG_FILE = "config.json"
 
+
+# -----------------------------
+# Save tasks
+# -----------------------------
 def save_tasks(manager):
     data = []
 
@@ -17,12 +21,16 @@ def save_tasks(manager):
             "done": task.done
         })
 
-    with open("tasks.json", "w") as file:
+    with open(TASKS_FILE, "w") as file:
         json.dump(data, file, indent=4)
 
+
+# -----------------------------
+# Load tasks
+# -----------------------------
 def load_tasks(manager):
     try:
-        with open("tasks.json", "r") as file:
+        with open(TASKS_FILE, "r") as file:
             data = json.load(file)
 
         for task_data in data:
@@ -44,21 +52,39 @@ def load_tasks(manager):
 
             manager.tasks.append(task)
 
-    except FileNotFoundError:
+    except (FileNotFoundError, json.JSONDecodeError):
         pass
-        
+
+
+# -----------------------------
+# Save GUI config
+# -----------------------------
 def save_config(config):
     with open(CONFIG_FILE, "w") as f:
-        json.dump(config, f)
+        json.dump(config, f, indent=4)
 
 
+# -----------------------------
+# Load GUI config
+# -----------------------------
 def load_config():
     try:
         with open(CONFIG_FILE, "r") as f:
-            return json.load(f)
-    except:
+            config = json.load(f)
+
+        # If old version stored just True/False
+        if isinstance(config, bool):
+            return {
+                "dark_mode": config,
+                "sort_type": "due_date",
+                "filter_type": "All"
+            }
+
+        return config
+
+    except (FileNotFoundError, json.JSONDecodeError):
         return {
             "dark_mode": False,
-            "sort": "due_date",
-            "filter": "All"
+            "sort_type": "due_date",
+            "filter_type": "All"
         }
