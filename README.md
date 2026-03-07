@@ -199,7 +199,42 @@ Changes:
 Bug fixed:
 - delete task button was not working, right now it's back and working again
 
---- version 0.1.101 ---
+
+
+--- version 0.1.103 ---
+Changes:
+- remember last sorting & filter choice
+- added the search bar at the top
+- better UI for the search bar, sorting and filtering
+
+Bug fixed:
+n/a
+
+
+
+--- version 0.1.107 ---
+Changes:
+- automatically saves after deletion of a task
+- automatically saves after closing the application
+- automatically saves after marking task as done
+- automatically saves every 10 seconds
+
+Bug fixed:
+- Mark Done button was not working, fixed
+
+
+
+--- version 0.1.107 ---
+Changes:
+- the view of the task right now in a table not just plain text
+- changed a little bit the colorign for Light/Dark mode
+
+Bug fixed:
+n/a
+
+
+
+--- version 0.1.107 ---
 Changes:
 
 

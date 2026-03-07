@@ -1,4 +1,5 @@
 import tkinter as tk
+import tkinter.ttk as ttk
 from tkinter import simpledialog, messagebox
 from tasks import TaskManager
 from storage import save_tasks, load_tasks, save_config, load_config
@@ -10,343 +11,286 @@ class TodoApp:
         self.root = root
         self.root.title("To-Do App")
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
-        self.manager = TaskManager()
-        
-        # Search
-        self.search_var = tk.StringVar()
-        self.search_var.trace_add("write", lambda *args: self.refresh_tasks())
-        
-        load_tasks(self.manager)
-        
-        config = load_config()
 
+        # Task manager
+        self.manager = TaskManager()
+        load_tasks(self.manager)
+
+        # Config
+        config = load_config()
         self.dark_mode = config.get("dark_mode", False)
         self.sort_type = tk.StringVar(value=config.get("sort", "due_date"))
         self.filter_type = tk.StringVar(value=config.get("filter", "All"))
+        self.search_var = tk.StringVar()
+        self.search_var.trace_add("write", lambda *args: self.refresh_tasks())
 
+        # Themes
         self.light_theme = {
-            "bg": "#f0f0f0",
-            "fg": "#000000",
+            "bg": "#f7f7f7",
+            "fg": "#1c1c1c",
             "button_bg": "#e0e0e0",
+            "button_fg": "#1c1c1c",
             "list_bg": "#ffffff",
-            "list_fg": "#000000"
+            "list_fg": "#1c1c1c",
+            "heading_bg": "#dcdcdc",
+            "heading_fg": "#1c1c1c"
         }
 
         self.dark_theme = {
-            "bg": "#1e1e1e",
-            "fg": "#ffffff",
-            "button_bg": "#2d2d2d",
-            "list_bg": "#252526",
-            "list_fg": "#ffffff"
+            "bg": "#181818",
+            "fg": "#f5f5f5",
+            "button_bg": "#2c2c2c",
+            "button_fg": "#f5f5f5",
+            "list_bg": "#212121",
+            "list_fg": "#f5f5f5",
+            "heading_bg": "#2c2c2c",
+            "heading_fg": "#f5f5f5"
         }
-        
-        # Search
+
+        # --- Search ---
         search_frame = tk.Frame(root)
         search_frame.pack(pady=5)
-
         tk.Label(search_frame, text="Search:").pack(side=tk.LEFT, padx=5)
+        tk.Entry(search_frame, textvariable=self.search_var, width=40).pack(side=tk.LEFT)
 
-        self.search_entry = tk.Entry(search_frame, textvariable=self.search_var, width=40)
-        self.search_entry.pack(side=tk.LEFT)
-
-        # Sorting
-        sort_options = ["due_date", "creation_date", "priority", "alphabetical"]
+        # --- Sorting ---
         sort_frame = tk.Frame(root)
         sort_frame.pack(pady=5)
-
         tk.Label(sort_frame, text="Sort by:").pack(side=tk.LEFT, padx=5)
-
-        self.sort_menu = tk.OptionMenu(
-            sort_frame,
-            self.sort_type,
-            *sort_options,
-            command=lambda _: self.refresh_tasks()
-        )
+        sort_options = ["due_date", "creation_date", "priority", "alphabetical"]
+        self.sort_menu = tk.OptionMenu(sort_frame, self.sort_type, *sort_options, command=lambda _: self.refresh_tasks())
         self.sort_menu.pack(side=tk.LEFT)
 
-        # Filtering
-        filter_options = ["All", "Active", "Completed", "Overdue"]
+        # --- Filtering ---
         filter_frame = tk.Frame(root)
         filter_frame.pack(pady=5)
-
         tk.Label(filter_frame, text="Show:").pack(side=tk.LEFT, padx=5)
-
-        self.filter_menu = tk.OptionMenu(
-            filter_frame,
-            self.filter_type,
-            *filter_options,
-            command=lambda _: self.refresh_tasks()
-        )
+        filter_options = ["All", "Active", "Completed", "Overdue"]
+        self.filter_menu = tk.OptionMenu(filter_frame, self.filter_type, *filter_options, command=lambda _: self.refresh_tasks())
         self.filter_menu.pack(side=tk.LEFT)
-        
-        # Light/Dark Mode
+
+        # --- Theme Toggle ---
         self.theme_button = tk.Button(root, text="🌙 Dark Mode", command=self.toggle_theme)
         if self.dark_mode:
             self.theme_button.config(text="☀ Light Mode")
         self.theme_button.pack(pady=5)
 
-        # Task List
-        self.task_listbox = tk.Listbox(root, width=100)
-        self.task_listbox.pack(pady=10)
+        # --- Task Treeview ---
+        columns = ("Name", "Priority", "Due", "DaysLeft", "Description", "Status")
+        self.task_tree = ttk.Treeview(root, columns=columns, show="headings", height=15)
+        for col in columns:
+            self.task_tree.heading(col, text=col)
+            if col == "Description":
+                self.task_tree.column(col, width=400)
+            else:
+                self.task_tree.column(col, width=100, anchor="center")
+        self.task_tree.pack(pady=10, fill=tk.BOTH, expand=True)
 
-        # Buttons
-        tk.Button(root, text="Add Task", command=self.add_task_gui).pack(side=tk.LEFT, padx=5)
-        tk.Button(root, text="Delete Task", command=self.delete_task_gui).pack(side=tk.LEFT, padx=5)
-        tk.Button(root, text="Mark Done", command=self.mark_done_gui).pack(side=tk.LEFT, padx=5)
+        # --- Buttons ---
+        btn_frame = tk.Frame(root)
+        btn_frame.pack(pady=5)
+        tk.Button(btn_frame, text="Add Task", command=self.add_task_gui).pack(side=tk.LEFT, padx=5)
+        tk.Button(btn_frame, text="Delete Task", command=self.delete_task_gui).pack(side=tk.LEFT, padx=5)
+        tk.Button(btn_frame, text="Mark Done", command=self.mark_done_gui).pack(side=tk.LEFT, padx=5)
 
+        # Apply theme and show tasks
         self.apply_theme()
         self.refresh_tasks()
-        
+
+        # Auto-save every 10 sec
         self.auto_save()
 
-    # ---------- GUI Methods ----------
+    # ---------- GUI Actions ----------
     def add_task_gui(self):
         name = simpledialog.askstring("Task Name", "Enter task name:")
         if not name:
             return
         description = simpledialog.askstring("Task Description", "Enter task description:") or ""
-        use_due = messagebox.askyesno("Due Date", "Do you want to set a due date?")
-        if use_due:
+        if messagebox.askyesno("Due Date", "Do you want to set a due date?"):
             due_date = self.open_calendar()
         else:
             due_date = None
-        priority = simpledialog.askstring("Priority", "Enter priority (High/Medium/Low):", initialvalue="Medium") or "Medium"
+        priority = simpledialog.askstring("Priority", "High/Medium/Low:", initialvalue="Medium") or "Medium"
 
         self.manager.add_task(name, description, due_date, priority)
         self.refresh_tasks()
         save_tasks(self.manager)
 
     def delete_task_gui(self):
-        selected = self.task_listbox.curselection()
-
+        selected = self.task_tree.selection()
         if not selected:
             return
-
-        index = selected[0]
-        visible_tasks = self.get_sorted_tasks()
-
-        if index >= len(visible_tasks):
-            return
-
-        task_to_delete = visible_tasks[index]
-
-        self.manager.tasks.remove(task_to_delete)
-
-        save_tasks(self.manager)
-        self.refresh_tasks()
+        task = self.get_task_from_selection(selected[0])
+        if task:
+            self.manager.tasks.remove(task)
+            self.refresh_tasks()
+            save_tasks(self.manager)
 
     def mark_done_gui(self):
-        selected_index = self.task_listbox.curselection()
-        if not selected_index:
+        selected = self.task_tree.selection()
+        if not selected:
             messagebox.showinfo("Mark Done", "Select a task to mark done.")
             return
+        task = self.get_task_from_selection(selected[0])
+        if task:
+            task.done = True
+            self.refresh_tasks()
+            save_tasks(self.manager)
+            
+    # Helper method
+    def find_task_by_values(self, values):
+        for task in self.manager.tasks:
+            due_str = task.due_date.strftime("%Y-%m-%d") if task.due_date else "No due date"
+            days_left = (task.due_date - datetime.now().date()).days if task.due_date else ""
+            days_info = f"{days_left} days left" if days_left > 0 else "Due today" if days_left == 0 else f"{abs(days_left)} days overdue" if days_left < 0 else ""
+            if (
+                task.priority == values[0] and
+                due_str == values[1] and
+                days_info == values[2] and
+                task.description == values[3]
+            ):
+                return task
+        return None
 
-        index = selected_index[0]
+    # ---------- Helper ----------
+    def get_task_from_selection(self, item_id):
+        values = self.task_tree.item(item_id, "values")
+        name = values[0]
+        for t in self.manager.tasks:
+            if t.name == name:
+                return t
+        return None
 
-        # Get currently displayed tasks (filtered + sorted)
-        visible_tasks = self.get_sorted_tasks()
-
-        if index >= len(visible_tasks):
-            return
-
-        task_to_mark = visible_tasks[index]
-
-        # Mark the task as done
-        task_to_mark.done = True
-
-        self.refresh_tasks()
-        save_tasks(self.manager)
-
-    # ---------- Toggle Light/Dark Theme ----------
+    # ---------- Toggle theme ----------
     def toggle_theme(self):
         self.dark_mode = not self.dark_mode
-        self.save_ui_config() # 💾 SAVE HERE
-
-        if self.dark_mode:
-            self.theme_button.config(text="☀ Light Mode")
-        else:
-            self.theme_button.config(text="🌙 Dark Mode")
-
+        self.save_ui_config()
         self.apply_theme()
-
+        self.theme_button.config(text="☀ Light Mode" if self.dark_mode else "🌙 Dark Mode")
 
     def apply_theme(self):
         theme = self.dark_theme if self.dark_mode else self.light_theme
-
-        # Root window
         self.root.configure(bg=theme["bg"])
-
-        # Update all children widgets
+        
         for widget in self.root.winfo_children():
             if isinstance(widget, tk.Label):
                 widget.config(bg=theme["bg"], fg=theme["fg"])
-            elif isinstance(widget, tk.Button):
-                widget.config(bg=theme["button_bg"], fg=theme["fg"],
-                            activebackground=theme["button_bg"])
-            elif isinstance(widget, tk.OptionMenu):
-                widget.config(bg=theme["button_bg"], fg=theme["fg"])
-            elif isinstance(widget, tk.Listbox):
-                widget.config(bg=theme["list_bg"], fg=theme["list_fg"])
-                
+            elif isinstance(widget, tk.Button) or isinstance(widget, tk.OptionMenu):
+                widget.config(bg=theme["button_bg"], fg=theme["button_fg"], activebackground=theme["button_bg"])
+            elif isinstance(widget, tk.Frame):
+                widget.config(bg=theme["bg"])
+        
+        # Treeview colors
+        style = ttk.Style()
+        style.theme_use("default")
+        style.configure("Treeview",
+                        background=theme["list_bg"],
+                        foreground=theme["list_fg"],
+                        fieldbackground=theme["list_bg"])
+        style.configure("Treeview.Heading",
+                        background=theme["heading_bg"],
+                        foreground=theme["heading_fg"])
+
     def save_ui_config(self):
-        config = {
-            "dark_mode": self.dark_mode,
-            "sort": self.sort_type.get(),
-            "filter": self.filter_type.get()
-        }
+        config = {"dark_mode": self.dark_mode, "sort": self.sort_type.get(), "filter": self.filter_type.get()}
         save_config(config)
-
-
-    def on_sort_change(self, value):
-        self.refresh_tasks()
-        self.save_ui_config()
-
-
-    def on_filter_change(self, value):
-        self.refresh_tasks()
-        self.save_ui_config()
 
     # ---------- Filtering & Sorting ----------
     def get_filtered_tasks(self):
-        value = self.filter_type.get()
         tasks = self.manager.tasks
-
-        # Filter status
-        if value == "Active":
+        f = self.filter_type.get()
+        if f == "Active":
             tasks = [t for t in tasks if not t.done]
-
-        elif value == "Completed":
+        elif f == "Completed":
             tasks = [t for t in tasks if t.done]
-
-        elif value == "Overdue":
+        elif f == "Overdue":
             tasks = [t for t in tasks if t.is_overdue]
 
-        # 🔍 Search filter
         search = self.search_var.get().lower().strip()
-
         if search:
-            tasks = [
-                t for t in tasks
-                if search in t.name.lower()
-                or search in t.description.lower()
-            ]
-
+            tasks = [t for t in tasks if search in t.name.lower() or search in t.description.lower()]
         return tasks
 
     def get_sorted_tasks(self):
         tasks = self.get_filtered_tasks()
-        sort_type = self.sort_type.get()
+        s = self.sort_type.get()
+        def key(t):
+            if s == "due_date":
+                return t.due_date if t.due_date else datetime.max.date()
+            elif s == "creation_date":
+                return t.created_at
+            elif s == "priority":
+                mapping = {"High":1,"Medium":2,"Low":3}
+                return mapping.get(t.priority, 2)
+            else:
+                return t.name.lower()
+        return sorted(tasks, key=key)
 
-        def sort_key(task):
-            if sort_type == "due_date":
-                return task.due_date if task.due_date else datetime.max.date()
-
-            elif sort_type == "creation_date":
-                return task.created_at  # must already be datetime
-
-            elif sort_type == "priority":
-                mapping = {"High": 1, "Medium": 2, "Low": 3}
-                return mapping.get(task.priority, 2)
-
-            else:  # alphabetical
-                return task.name.lower()
-
-        return sorted(tasks, key=sort_key)
-    
-    # ---------- Calendar selector ----------
+    # ---------- Calendar ----------
     def open_calendar(self):
         top = tk.Toplevel(self.root)
         top.title("Select Due Date")
-        top.grab_set()  # make it modal
-
+        top.grab_set()
         cal = Calendar(top, selectmode="day", date_pattern="yyyy-mm-dd")
         cal.pack(pady=10)
-
-        selected_date = tk.StringVar()
-
-        def confirm_date():
-            selected_date.set(cal.get_date())
-            top.destroy()
-
-        tk.Button(top, text="Select", command=confirm_date).pack(pady=5)
-
+        sel = tk.StringVar()
+        tk.Button(top, text="Select", command=lambda: (sel.set(cal.get_date()), top.destroy())).pack(pady=5)
         self.root.wait_window(top)
+        return sel.get()
 
-        return selected_date.get()
-
-    # ---------- Refresh List ----------
+    # ---------- Refresh ----------
     def refresh_tasks(self):
-        self.task_listbox.delete(0, tk.END)
+        for row in self.task_tree.get_children():
+            self.task_tree.delete(row)
 
         tasks = self.get_sorted_tasks()
-
-        for index, task in enumerate(tasks):
-
-            status = "✔" if task.done else "✘"
-
-            # ---- Due Date Info ----
-            if task.due_date:
-
-                # Safety conversion (only if still string)
-                if isinstance(task.due_date, str):
-                    task.due_date = datetime.strptime(task.due_date, "%Y-%m-%d").date()
-
-                due_str = f"Due: {task.due_date.strftime('%Y-%m-%d')}"
-
-                days_left = (task.due_date - datetime.now().date()).days
-
-                if task.done:
-                    days_info = ""
-                elif days_left > 0:
-                    days_info = f" | {days_left} days left"
-                elif days_left == 0:
-                    days_info = " | Due today"
-                else:
-                    days_info = f" | {abs(days_left)} days overdue"
-            else:
-                due_str = "No due date"
+        for t in tasks:
+            if isinstance(t.due_date, str):
+                t.due_date = datetime.strptime(t.due_date, "%Y-%m-%d").date() if t.due_date else None
+            due_str = t.due_date.strftime("%Y-%m-%d") if t.due_date else "No due date"
+            days_left = (t.due_date - datetime.now().date()).days if t.due_date else ""
+            if t.done:
+                status = "✔"
                 days_info = ""
+            else:
+                status = "✘"
+                if t.due_date:
+                    if days_left > 0: days_info = f"{days_left} days left"
+                    elif days_left == 0: days_info = "Due today"
+                    else: days_info = f"{abs(days_left)} days overdue"
+                else:
+                    days_info = ""
+            row_id = self.task_tree.insert("", tk.END, values=(t.name, t.priority, due_str, days_info, t.description, status))
+            # Coloring
+            if t.done:
+                self.task_tree.item(row_id, tags=("done",))
+            elif t.due_date and not t.done and t.due_date < datetime.now().date():
+                self.task_tree.item(row_id, tags=("overdue",))
+            elif t.priority == "High":
+                self.task_tree.item(row_id, tags=("high",))
+            elif t.priority == "Medium":
+                self.task_tree.item(row_id, tags=("medium",))
+            elif t.priority == "Low":
+                self.task_tree.item(row_id, tags=("low",))
+        self.task_tree.tag_configure("done", foreground="gray")
+        self.task_tree.tag_configure("overdue", foreground="red")
+        self.task_tree.tag_configure("high", foreground="#ff4d4d")
+        self.task_tree.tag_configure("medium", foreground="#ffaa00")
+        self.task_tree.tag_configure("low", foreground="#4caf50")
 
-            # ---- Full Display Text ----
-            display_text = (
-                f"[{status}] "
-                f"{task.name} "
-                f"(Priority: {task.priority})\n"
-                f"   {task.description}\n"
-                f"   {due_str}{days_info}"
-            )
-
-            self.task_listbox.insert(tk.END, display_text)
-
-            # ---- Coloring ----
-            if task.done:
-                self.task_listbox.itemconfig(index, fg="gray")
-
-            elif task.due_date and not task.done and task.due_date < datetime.now().date():
-                self.task_listbox.itemconfig(index, fg="red")
-
-            elif task.priority == "High":
-                self.task_listbox.itemconfig(index, fg="#ff4d4d")
-
-            elif task.priority == "Medium":
-                self.task_listbox.itemconfig(index, fg="#ffaa00")
-
-            elif task.priority == "Low":
-                self.task_listbox.itemconfig(index, fg="#4caf50")
-      
-    # ---------- Saving automaticlly every 10 seconds ----------   
+    # ---------- Auto-save ----------
     def auto_save(self):
         save_tasks(self.manager)
         self.root.after(10000, self.auto_save)
-        
-    # ---------- Saving after closure of the application ----------       
+
+    # ---------- Close ----------
     def on_close(self):
         save_tasks(self.manager)
-        save_config(self.dark_mode)
+        self.save_ui_config()
         self.root.destroy()
 
 
-# ---------- Run App ----------
+# ---------- Run ----------
 if __name__ == "__main__":
     root = tk.Tk()
     app = TodoApp(root)

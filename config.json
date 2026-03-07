@@ -1,1 +1,5 @@
-true
+{
+    "dark_mode": true,
+    "sort": "due_date",
+    "filter": "All"
+}

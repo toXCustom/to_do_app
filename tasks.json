@@ -19,5 +19,12 @@
         "due_date": "2027-04-29",
         "priority": "High",
         "done": false
+    },
+    {
+        "name": "\u015amieci",
+        "description": "Wynie\u015b\u0107 \u015bmieci",
+        "due_date": "2026-03-07",
+        "priority": "Low",
+        "done": false
     }
 ]
