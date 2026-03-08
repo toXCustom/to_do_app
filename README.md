@@ -224,7 +224,7 @@ Bug fixed:
 
 
 
---- version 0.1.107 ---
+--- version 0.1.109 ---
 Changes:
 - the view of the task right now in a table not just plain text
 - changed a little bit the colorign for Light/Dark mode
@@ -236,6 +236,40 @@ n/a
 
 --- version 0.1.107 ---
 Changes:
-
+- when adding a new task, right now you have only one window where you can add all the necessary information
 
 Bug fixed:
+-
+
+
+
+--- version 0.1.107 ---
+Changes:
+- 
+
+Bug fixed:
+-
+
+
+--- version 0.1.107 ---
+Changes:
+- 
+
+Bug fixed:
+-
+
+
+--- version 0.1.107 ---
+Changes:
+- 
+
+Bug fixed:
+-
+
+
+--- version 0.1.107 ---
+Changes:
+- 
+
+Bug fixed:
+-

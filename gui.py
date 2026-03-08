@@ -86,12 +86,21 @@ class TodoApp:
                 self.task_tree.column(col, width=100, anchor="center")
         self.task_tree.pack(pady=10, fill=tk.BOTH, expand=True)
 
-        # --- Buttons ---
-        btn_frame = tk.Frame(root)
-        btn_frame.pack(pady=5)
-        tk.Button(btn_frame, text="Add Task", command=self.add_task_gui).pack(side=tk.LEFT, padx=5)
-        tk.Button(btn_frame, text="Delete Task", command=self.delete_task_gui).pack(side=tk.LEFT, padx=5)
-        tk.Button(btn_frame, text="Mark Done", command=self.mark_done_gui).pack(side=tk.LEFT, padx=5)
+        # ---------- Buttons ----------
+        button_frame = tk.Frame(root)
+        button_frame.pack(pady=10)
+
+        # Add Task
+        tk.Button(button_frame, text="Add Task", command=self.add_task_gui).pack(side=tk.LEFT, padx=5)
+
+        # Edit Task
+        tk.Button(button_frame, text="Edit Task", command=self.edit_task_gui).pack(side=tk.LEFT, padx=5)
+
+        # Delete Task
+        tk.Button(button_frame, text="Delete Task", command=self.delete_task_gui).pack(side=tk.LEFT, padx=5)
+
+        # Mark Done
+        tk.Button(button_frame, text="Mark Done", command=self.mark_done_gui).pack(side=tk.LEFT, padx=5)
 
         # Apply theme and show tasks
         self.apply_theme()
@@ -102,19 +111,137 @@ class TodoApp:
 
     # ---------- GUI Actions ----------
     def add_task_gui(self):
-        name = simpledialog.askstring("Task Name", "Enter task name:")
-        if not name:
-            return
-        description = simpledialog.askstring("Task Description", "Enter task description:") or ""
-        if messagebox.askyesno("Due Date", "Do you want to set a due date?"):
-            due_date = self.open_calendar()
-        else:
-            due_date = None
-        priority = simpledialog.askstring("Priority", "High/Medium/Low:", initialvalue="Medium") or "Medium"
+        # Create a single modal window
+        top = tk.Toplevel(self.root)
+        top.title("Add Task")
+        top.grab_set()  # make modal
 
-        self.manager.add_task(name, description, due_date, priority)
-        self.refresh_tasks()
-        save_tasks(self.manager)
+        # Task Name
+        tk.Label(top, text="Task Name:").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+        name_entry = tk.Entry(top, width=40)
+        name_entry.grid(row=0, column=1, padx=5, pady=5)
+
+        # Description
+        tk.Label(top, text="Description:").grid(row=1, column=0, sticky="e", padx=5, pady=5)
+        desc_entry = tk.Entry(top, width=40)
+        desc_entry.grid(row=1, column=1, padx=5, pady=5)
+
+        # Priority
+        tk.Label(top, text="Priority:").grid(row=2, column=0, sticky="e", padx=5, pady=5)
+        priority_var = tk.StringVar(value="Medium")
+        priority_menu = tk.OptionMenu(top, priority_var, "High", "Medium", "Low")
+        priority_menu.grid(row=2, column=1, sticky="w", padx=5, pady=5)
+
+        # Due Date
+        tk.Label(top, text="Due Date:").grid(row=3, column=0, sticky="e", padx=5, pady=5)
+        due_var = tk.StringVar()
+        cal = Calendar(top, selectmode="day", date_pattern="yyyy-mm-dd")
+        cal.grid(row=3, column=1, padx=5, pady=5)
+
+        def select_due():
+            due_var.set(cal.get_date())
+
+        tk.Button(top, text="Select Date", command=select_due).grid(row=4, column=1, sticky="w", padx=5, pady=5)
+
+        # Add Task Button
+        def confirm_task():
+            name = name_entry.get().strip()
+            description = desc_entry.get().strip()
+            due_date = due_var.get() if due_var.get() else None
+            priority = priority_var.get()
+
+            if not name:
+                messagebox.showerror("Error", "Task must have a name!")
+                return
+
+            self.manager.add_task(name, description, due_date, priority)
+            self.refresh_tasks()
+            save_tasks(self.manager)
+            top.destroy()
+
+        tk.Button(top, text="Add Task", command=confirm_task).grid(row=5, column=0, columnspan=2, pady=10)
+
+        top.mainloop()
+        
+    def edit_task_gui(self):
+        selected_item = self.task_tree.selection()
+        if not selected_item:
+            messagebox.showinfo("Edit Task", "Select a task to edit.")
+            return
+
+        task_index = self.task_tree.index(selected_item[0])
+        visible_tasks = self.get_sorted_tasks()
+        task_to_edit = visible_tasks[task_index]
+
+        # Create modal window
+        top = tk.Toplevel(self.root)
+        top.title("Edit Task")
+        top.grab_set()  # modal
+
+        # Task Name
+        tk.Label(top, text="Task Name:").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+        name_entry = tk.Entry(top, width=40)
+        name_entry.grid(row=0, column=1, padx=5, pady=5)
+        name_entry.insert(0, task_to_edit.name) 
+
+        # Description
+        tk.Label(top, text="Description:").grid(row=1, column=0, sticky="e", padx=5, pady=5)
+        desc_entry = tk.Entry(top, width=40)
+        desc_entry.grid(row=1, column=1, padx=5, pady=5)
+        desc_entry.insert(0, task_to_edit.description)
+
+        # Priority
+        tk.Label(top, text="Priority:").grid(row=2, column=0, sticky="e", padx=5, pady=5)
+        priority_var = tk.StringVar(value=task_to_edit.priority)
+        priority_menu = tk.OptionMenu(top, priority_var, "High", "Medium", "Low")
+        priority_menu.grid(row=2, column=1, sticky="w", padx=5, pady=5)
+
+        # Due Date
+        tk.Label(top, text="Due Date:").grid(row=3, column=0, sticky="e", padx=5, pady=5)
+        due_var = tk.StringVar(value=task_to_edit.due_date.strftime("%Y-%m-%d") if task_to_edit.due_date else "")
+        cal = Calendar(top, selectmode="day", date_pattern="yyyy-mm-dd")
+        if task_to_edit.due_date:
+            init_date = task_to_edit.due_date
+        else:
+            init_date = datetime.now().date()
+
+        cal = Calendar(
+            top,
+            selectmode="day",
+            year=init_date.year,
+            month=init_date.month,
+            day=init_date.day,
+            date_pattern="yyyy-mm-dd"
+        )
+        cal.grid(row=3, column=1, padx=5, pady=5)
+
+        def select_due():
+            due_var.set(cal.get_date())
+
+        tk.Button(top, text="Select Date", command=select_due).grid(row=4, column=1, sticky="w", padx=5, pady=5)
+
+        # Confirm Edit Button
+        def confirm_edit():
+            new_name = name_entry.get().strip()
+            new_desc = desc_entry.get().strip()
+            new_priority = priority_var.get()
+            new_due_date_str = cal.get_date()  # always a string in yyyy-mm-dd
+            new_due_date = datetime.strptime(new_due_date_str, "%Y-%m-%d").date() if new_due_date_str else None
+
+            # Use task_to_edit instead of task
+            task_to_edit.name = new_name
+            task_to_edit.description = new_desc
+            task_to_edit.priority = new_priority
+            task_to_edit.due_date = new_due_date
+            task_to_edit.update_status()
+
+            self.refresh_tasks()
+            save_tasks(self.manager)
+            top.destroy()
+
+        tk.Button(top, text="Save Changes", command=confirm_edit).grid(row=5, column=0, columnspan=2, pady=10)
+
+        top.mainloop()
 
     def delete_task_gui(self):
         selected = self.task_tree.selection()

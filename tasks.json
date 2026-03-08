@@ -26,5 +26,12 @@
         "due_date": "2026-03-07",
         "priority": "Low",
         "done": false
+    },
+    {
+        "name": "Drugi p\u0142otek",
+        "description": "Zrobi\u0107 drugi p\u0142otek do grz\u0105dki zewn\u0119trznej",
+        "due_date": "2026-03-06",
+        "priority": "High",
+        "done": false
     }
 ]
