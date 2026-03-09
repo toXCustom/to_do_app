@@ -234,16 +234,37 @@ n/a
 
 
 
---- version 0.1.107 ---
+--- version 0.2.101 ---
 Changes:
 - when adding a new task, right now you have only one window where you can add all the necessary information
+- added the button and the possibility to edit the tasks
 
 Bug fixed:
 -
 
 
 
---- version 0.1.107 ---
+--- version 0.2.105 --- 09.03.2026
+Changes:
+- module-level theme constants — LIGHT_THEME and DARK_THEME
+- recursive theming — A new _apply_theme_to_widget(widget, theme) helper walks each widget and all its descendants
+- _days_info() helper — the duplicated days calculation is now a single @staticmethod
+- changed the coloring of the LIGHT_THEME and DARK_THEME
+
+Bug fixed:
+- top.mainloop() removed from both dialogs
+- duplicate Calendar in edit_task_gui removed
+
+
+--- version 0.3.100 --- 10.03.2026
+Changes:
+- complete rework of the UI of the application
+
+Bug fixed:
+-
+
+
+--- version 0.2.102 ---
 Changes:
 - 
 
@@ -251,23 +272,7 @@ Bug fixed:
 -
 
 
---- version 0.1.107 ---
-Changes:
-- 
-
-Bug fixed:
--
-
-
---- version 0.1.107 ---
-Changes:
-- 
-
-Bug fixed:
--
-
-
---- version 0.1.107 ---
+--- version 0.2.102 ---
 Changes:
 - 
 

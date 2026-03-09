@@ -6,6 +6,38 @@ from storage import save_tasks, load_tasks, save_config, load_config
 from datetime import datetime
 from tkcalendar import Calendar
 
+# ---------- Theme Constants ----------
+LIGHT_THEME = {
+    "bg": "#FAF7F2",           # warm parchment background
+    "fg": "#1C1917",           # near-black text
+    "muted_fg": "#78716C",     # secondary text
+    "button_bg": "#C2622D",    # terracotta accent
+    "button_fg": "#FFFFFF",
+    "button_active": "#A85226",
+    "list_bg": "#FFFFFF",      # crisp white rows
+    "list_fg": "#1C1917",
+    "heading_bg": "#F2EDE6",   # warm off-white header/toolbar
+    "heading_fg": "#78716C",
+    "border": "#E0D9CF",
+    "surface": "#F2EDE6",
+}
+
+DARK_THEME = {
+    "bg": "#13151A",           # deep midnight
+    "fg": "#EDE9E3",           # warm off-white text
+    "muted_fg": "#8A8E99",     # secondary text
+    "button_bg": "#E07A47",    # warm orange accent
+    "button_fg": "#FFFFFF",
+    "button_active": "#C86832",
+    "list_bg": "#1C1F26",      # slightly lifted surface
+    "list_fg": "#EDE9E3",
+    "heading_bg": "#22262F",   # toolbar surface
+    "heading_fg": "#8A8E99",
+    "border": "#2E3340",
+    "surface": "#22262F",
+}
+
+
 class TodoApp:
     def __init__(self, root):
         self.root = root
@@ -23,29 +55,6 @@ class TodoApp:
         self.filter_type = tk.StringVar(value=config.get("filter", "All"))
         self.search_var = tk.StringVar()
         self.search_var.trace_add("write", lambda *args: self.refresh_tasks())
-
-        # Themes
-        self.light_theme = {
-            "bg": "#f7f7f7",
-            "fg": "#1c1c1c",
-            "button_bg": "#e0e0e0",
-            "button_fg": "#1c1c1c",
-            "list_bg": "#ffffff",
-            "list_fg": "#1c1c1c",
-            "heading_bg": "#dcdcdc",
-            "heading_fg": "#1c1c1c"
-        }
-
-        self.dark_theme = {
-            "bg": "#181818",
-            "fg": "#f5f5f5",
-            "button_bg": "#2c2c2c",
-            "button_fg": "#f5f5f5",
-            "list_bg": "#212121",
-            "list_fg": "#f5f5f5",
-            "heading_bg": "#2c2c2c",
-            "heading_fg": "#f5f5f5"
-        }
 
         # --- Search ---
         search_frame = tk.Frame(root)
@@ -161,8 +170,6 @@ class TodoApp:
 
         tk.Button(top, text="Add Task", command=confirm_task).grid(row=5, column=0, columnspan=2, pady=10)
 
-        top.mainloop()
-        
     def edit_task_gui(self):
         selected_item = self.task_tree.selection()
         if not selected_item:
@@ -199,11 +206,7 @@ class TodoApp:
         # Due Date
         tk.Label(top, text="Due Date:").grid(row=3, column=0, sticky="e", padx=5, pady=5)
         due_var = tk.StringVar(value=task_to_edit.due_date.strftime("%Y-%m-%d") if task_to_edit.due_date else "")
-        cal = Calendar(top, selectmode="day", date_pattern="yyyy-mm-dd")
-        if task_to_edit.due_date:
-            init_date = task_to_edit.due_date
-        else:
-            init_date = datetime.now().date()
+        init_date = task_to_edit.due_date if task_to_edit.due_date else datetime.now().date()
 
         cal = Calendar(
             top,
@@ -241,7 +244,7 @@ class TodoApp:
 
         tk.Button(top, text="Save Changes", command=confirm_edit).grid(row=5, column=0, columnspan=2, pady=10)
 
-        top.mainloop()
+        self.root.wait_window(top)
 
     def delete_task_gui(self):
         selected = self.task_tree.selection()
@@ -268,8 +271,7 @@ class TodoApp:
     def find_task_by_values(self, values):
         for task in self.manager.tasks:
             due_str = task.due_date.strftime("%Y-%m-%d") if task.due_date else "No due date"
-            days_left = (task.due_date - datetime.now().date()).days if task.due_date else ""
-            days_info = f"{days_left} days left" if days_left > 0 else "Due today" if days_left == 0 else f"{abs(days_left)} days overdue" if days_left < 0 else ""
+            days_info = self._days_info(task)
             if (
                 task.priority == values[0] and
                 due_str == values[1] and
@@ -295,17 +297,23 @@ class TodoApp:
         self.apply_theme()
         self.theme_button.config(text="☀ Light Mode" if self.dark_mode else "🌙 Dark Mode")
 
+    def _apply_theme_to_widget(self, widget, theme):
+        """Recursively apply theme to a widget and all its children."""
+        if isinstance(widget, tk.Label):
+            widget.config(bg=theme["bg"], fg=theme["fg"])
+        elif isinstance(widget, (tk.Button, tk.OptionMenu)):
+            widget.config(bg=theme["button_bg"], fg=theme["button_fg"], activebackground=theme["button_bg"])
+        elif isinstance(widget, tk.Frame):
+            widget.config(bg=theme["bg"])
+        for child in widget.winfo_children():
+            self._apply_theme_to_widget(child, theme)
+
     def apply_theme(self):
-        theme = self.dark_theme if self.dark_mode else self.light_theme
+        theme = DARK_THEME if self.dark_mode else LIGHT_THEME
         self.root.configure(bg=theme["bg"])
-        
+
         for widget in self.root.winfo_children():
-            if isinstance(widget, tk.Label):
-                widget.config(bg=theme["bg"], fg=theme["fg"])
-            elif isinstance(widget, tk.Button) or isinstance(widget, tk.OptionMenu):
-                widget.config(bg=theme["button_bg"], fg=theme["button_fg"], activebackground=theme["button_bg"])
-            elif isinstance(widget, tk.Frame):
-                widget.config(bg=theme["bg"])
+            self._apply_theme_to_widget(widget, theme)
         
         # Treeview colors
         style = ttk.Style()
@@ -313,10 +321,17 @@ class TodoApp:
         style.configure("Treeview",
                         background=theme["list_bg"],
                         foreground=theme["list_fg"],
-                        fieldbackground=theme["list_bg"])
+                        fieldbackground=theme["list_bg"],
+                        rowheight=28,
+                        font=("Georgia", 11))
         style.configure("Treeview.Heading",
                         background=theme["heading_bg"],
-                        foreground=theme["heading_fg"])
+                        foreground=theme["heading_fg"],
+                        font=("Georgia", 10, "bold"),
+                        relief="flat")
+        style.map("Treeview",
+                  background=[("selected", theme["button_bg"])],
+                  foreground=[("selected", theme["button_fg"])])
 
     def save_ui_config(self):
         config = {"dark_mode": self.dark_mode, "sort": self.sort_type.get(), "filter": self.filter_type.get()}
@@ -366,6 +381,18 @@ class TodoApp:
         return sel.get()
 
     # ---------- Refresh ----------
+    @staticmethod
+    def _days_info(task):
+        """Return a human-readable string for how many days until/since a task's due date."""
+        if not task.due_date:
+            return ""
+        days_left = (task.due_date - datetime.now().date()).days
+        if days_left > 0:
+            return f"{days_left} days left"
+        if days_left == 0:
+            return "Due today"
+        return f"{abs(days_left)} days overdue"
+
     def refresh_tasks(self):
         for row in self.task_tree.get_children():
             self.task_tree.delete(row)
@@ -375,18 +402,12 @@ class TodoApp:
             if isinstance(t.due_date, str):
                 t.due_date = datetime.strptime(t.due_date, "%Y-%m-%d").date() if t.due_date else None
             due_str = t.due_date.strftime("%Y-%m-%d") if t.due_date else "No due date"
-            days_left = (t.due_date - datetime.now().date()).days if t.due_date else ""
             if t.done:
                 status = "✔"
                 days_info = ""
             else:
                 status = "✘"
-                if t.due_date:
-                    if days_left > 0: days_info = f"{days_left} days left"
-                    elif days_left == 0: days_info = "Due today"
-                    else: days_info = f"{abs(days_left)} days overdue"
-                else:
-                    days_info = ""
+                days_info = self._days_info(t)
             row_id = self.task_tree.insert("", tk.END, values=(t.name, t.priority, due_str, days_info, t.description, status))
             # Coloring
             if t.done:
@@ -399,11 +420,19 @@ class TodoApp:
                 self.task_tree.item(row_id, tags=("medium",))
             elif t.priority == "Low":
                 self.task_tree.item(row_id, tags=("low",))
-        self.task_tree.tag_configure("done", foreground="gray")
-        self.task_tree.tag_configure("overdue", foreground="red")
-        self.task_tree.tag_configure("high", foreground="#ff4d4d")
-        self.task_tree.tag_configure("medium", foreground="#ffaa00")
-        self.task_tree.tag_configure("low", foreground="#4caf50")
+        # Light mode: richer priority colors; dark mode: softer tinted versions
+        if self.dark_mode:
+            self.task_tree.tag_configure("done",    foreground="#5A5E6A")
+            self.task_tree.tag_configure("overdue", foreground="#F87171")
+            self.task_tree.tag_configure("high",    foreground="#F87171")
+            self.task_tree.tag_configure("medium",  foreground="#FCD34D")
+            self.task_tree.tag_configure("low",     foreground="#6EE7A0")
+        else:
+            self.task_tree.tag_configure("done",    foreground="#A8A29E")
+            self.task_tree.tag_configure("overdue", foreground="#DC3545")
+            self.task_tree.tag_configure("high",    foreground="#B91C1C")
+            self.task_tree.tag_configure("medium",  foreground="#B45309")
+            self.task_tree.tag_configure("low",     foreground="#4D7C5F")
 
     # ---------- Auto-save ----------
     def auto_save(self):
