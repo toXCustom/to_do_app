@@ -1,5 +1,6 @@
 {
     "dark_mode": true,
     "sort": "due_date",
-    "filter": "All"
+    "filter": "All",
+    "geometry": "1560x960+272+116"
 }
