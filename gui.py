@@ -60,7 +60,9 @@ class TodoApp:
         config = load_config()
         self.dark_mode = config.get("dark_mode", False)
         self.sort_type = tk.StringVar(value=config.get("sort", "due_date"))
+        self.sort_reverse = False          # ascending by default
         self.filter_type = tk.StringVar(value=config.get("filter", "All"))
+        self._calendar_date_filter = None  # set when user clicks a calendar day
         self.search_var = tk.StringVar()
         self.search_var.trace_add("write", lambda *args: self.refresh_tasks())
 
@@ -109,72 +111,67 @@ class TodoApp:
         self.toolbar.pack(fill=tk.X)
 
         self.toolbar_inner = tk.Frame(self.toolbar)
-        self.toolbar_inner.pack(fill=tk.X, padx=14, pady=(10, 0))
+        self.toolbar_inner.pack(fill=tk.X, padx=14, pady=8)
 
-        # ── Filter row ───────────────────────────────
-        self.filter_row = tk.Frame(self.toolbar_inner)
-        self.filter_row.pack(fill=tk.X, pady=(0, 6))
+        # ── Single row: FILTER on left, SORT on right ────
+        self.filter_row = self.toolbar_inner
+        self.sort_row   = self.toolbar_inner
 
+        # Left side — FILTER label + search + filter tabs
         self.filter_heading = tk.Label(
-            self.filter_row, text="FILTER",
+            self.toolbar_inner, text="FILTER",
             font=("TkDefaultFont", 8, "bold")
         )
-        self.filter_heading.pack(side=tk.LEFT, padx=(0, 10))
+        self.filter_heading.pack(side=tk.LEFT, padx=(0, 8))
 
-        # Search entry
         self.search_entry = tk.Entry(
-            self.filter_row,
+            self.toolbar_inner,
             textvariable=self.search_var,
-            width=22, relief="flat",
+            width=18, relief="flat",
             font=("TkDefaultFont", 11)
         )
-        self.search_entry.pack(side=tk.LEFT, ipady=5, padx=(0, 10))
+        self.search_entry.pack(side=tk.LEFT, ipady=5, padx=(0, 8))
 
-        # Filter tab buttons
         self.filter_buttons = {}
         for label in ["All", "Active", "Completed", "Overdue"]:
             btn = tk.Button(
-                self.filter_row, text=label,
+                self.toolbar_inner, text=label,
                 relief="flat", cursor="hand2",
                 font=("TkDefaultFont", 10, "bold"),
-                padx=11, pady=5,
+                padx=10, pady=5,
                 command=lambda v=label: self._set_filter(v)
             )
             btn.pack(side=tk.LEFT, padx=2)
             self.filter_buttons[label] = btn
 
-        # ── Thin divider between rows ─────────────────
-        self.toolbar_divider = tk.Frame(self.toolbar_inner, height=1)
-        self.toolbar_divider.pack(fill=tk.X, pady=4)
-
-        # ── Sort row ─────────────────────────────────
-        self.sort_row = tk.Frame(self.toolbar_inner)
-        self.sort_row.pack(fill=tk.X, pady=(0, 10))
-
-        self.sort_heading = tk.Label(
-            self.sort_row, text="SORT",
-            font=("TkDefaultFont", 8, "bold")
-        )
-        self.sort_heading.pack(side=tk.LEFT, padx=(0, 10))
-
-        # Sort tab buttons
-        self.sort_buttons = {}
+        # Right side — SORT tabs then SORT label (packed right-to-left)
         sort_options = [
             ("due_date",      "Due Date"),
             ("priority",      "Priority"),
             ("alphabetical",  "A – Z"),
             ("creation_date", "Created"),
         ]
-        for value, label in sort_options:
+        self.sort_buttons = {}
+        for value, label in reversed(sort_options):
             btn = tk.Button(
-                self.sort_row, text=label,
+                self.toolbar_inner, text=label,
                 relief="flat", cursor="hand2",
                 font=("TkDefaultFont", 10, "bold"),
-                padx=11, pady=5,
+                padx=10, pady=5,
                 command=lambda v=value: self._set_sort(v)
             )
-            btn.pack(side=tk.LEFT, padx=2)
+            btn.pack(side=tk.RIGHT, padx=2)
             self.sort_buttons[value] = btn
+
+        self.sort_heading = tk.Label(
+            self.toolbar_inner, text="SORT",
+            font=("TkDefaultFont", 8, "bold")
+        )
+        self.sort_heading.pack(side=tk.RIGHT, padx=(0, 8))
+
+        # vertical separator between filter and sort groups
+        self.toolbar_divider = tk.Frame(self.toolbar_inner, width=1)
+        self.toolbar_divider.pack(side=tk.RIGHT, fill=tk.Y, padx=10, pady=4)
 
         # ── Toolbar separator ────────────────────────
         self.sep2 = tk.Frame(self.root, height=1)
@@ -230,9 +227,47 @@ class TodoApp:
         )
         self.theme_button.pack(side=tk.LEFT)
 
-        # ── Task Treeview (packed last so expand fills remaining space) ──
-        tree_frame = tk.Frame(self.root)
-        tree_frame.pack(fill=tk.BOTH, expand=True)
+        # ── Main content: sidebar + task list side by side ──
+        self.content_frame = tk.Frame(self.root)
+        self.content_frame.pack(fill=tk.BOTH, expand=True)
+
+        # ── Sidebar ──────────────────────────────────
+        self.sidebar = tk.Frame(self.content_frame, width=220)
+        self.sidebar.pack(side=tk.LEFT, fill=tk.Y, padx=(10, 0), pady=10)
+        self.sidebar.pack_propagate(False)
+
+        self.cal_label = tk.Label(
+            self.sidebar, text="📅  Calendar",
+            font=("TkDefaultFont", 10, "bold")
+        )
+        self.cal_label.pack(anchor="w", padx=6, pady=(0, 6))
+
+        self.mini_cal = Calendar(
+            self.sidebar,
+            selectmode="day",
+            date_pattern="yyyy-mm-dd",
+            showweeknumbers=False,
+            font=("TkDefaultFont", 9),
+        )
+        self.mini_cal.pack(fill=tk.X, padx=4)
+        self.mini_cal.bind("<<CalendarSelected>>", self._on_calendar_day_click)
+
+        # "Show all" link below the calendar
+        self.cal_reset_btn = tk.Button(
+            self.sidebar, text="Show all tasks",
+            relief="flat", cursor="hand2",
+            font=("TkDefaultFont", 9),
+            command=self._calendar_reset
+        )
+        self.cal_reset_btn.pack(pady=(6, 0))
+
+        # Vertical divider between sidebar and list
+        self.sidebar_sep = tk.Frame(self.content_frame, width=1)
+        self.sidebar_sep.pack(side=tk.LEFT, fill=tk.Y, padx=(8, 0))
+
+        # ── Task Treeview ────────────────────────────
+        tree_frame = tk.Frame(self.content_frame)
+        tree_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         # "Done" is the first column so the checkbox sits on the left edge
         columns = ("Done", "Name", "Priority", "Due", "DaysLeft", "Description")
@@ -254,6 +289,20 @@ class TodoApp:
             self.task_tree.column(col, width=width, anchor=anchor,
                                   minwidth=width if col == "Done" else 40)
 
+        # Map column names to sort keys and bind click handlers
+        self._col_sort_map = {
+            "Name":        "alphabetical",
+            "Priority":    "priority",
+            "Due":         "due_date",
+            "DaysLeft":    "due_date",
+            "Description": "alphabetical",
+        }
+        for col in self._col_sort_map:
+            self.task_tree.heading(
+                col, text=col,
+                command=lambda c=col: self._sort_by_column(c)
+            )
+
         scrollbar = ttk.Scrollbar(
             tree_frame, orient=tk.VERTICAL,
             command=self.task_tree.yview
@@ -266,6 +315,10 @@ class TodoApp:
         self.task_tree.bind("<Button-1>", self._on_tree_click)
         # Double-click anywhere else opens edit
         self.task_tree.bind("<Double-1>", lambda e: self.edit_task_gui())
+        # Hover highlight
+        self._hovered_row = None
+        self.task_tree.bind("<Motion>",  self._on_tree_hover)
+        self.task_tree.bind("<Leave>",   self._on_tree_leave)
 
     # ═══════════════════════════════════════════════
     #  FILTER HELPER
@@ -280,6 +333,23 @@ class TodoApp:
         self.sort_type.set(value)
         self._update_sort_buttons()
         self.refresh_tasks()
+
+    def _bind_hover(self, btn, is_active_fn, rest_bg=None, hover_bg=None):
+        """Attach Enter/Leave hover highlight to any pill/toolbar button."""
+        def on_enter(e):
+            t = DARK_THEME if self.dark_mode else LIGHT_THEME
+            if is_active_fn():
+                btn.configure(bg=t["accent_hover"])
+            else:
+                btn.configure(bg=hover_bg or t["border"])
+        def on_leave(e):
+            t = DARK_THEME if self.dark_mode else LIGHT_THEME
+            if is_active_fn():
+                btn.configure(bg=t["accent"])
+            else:
+                btn.configure(bg=rest_bg or t["surface2"])
+        btn.bind("<Enter>", on_enter)
+        btn.bind("<Leave>", on_leave)
 
     def _update_filter_buttons(self):
         t = DARK_THEME if self.dark_mode else LIGHT_THEME
@@ -297,6 +367,7 @@ class TodoApp:
                     activebackground=t["border"],
                     activeforeground=t["fg"]
                 )
+            self._bind_hover(btn, lambda lbl=label: self.filter_type.get() == lbl)
 
     def _update_sort_buttons(self):
         t = DARK_THEME if self.dark_mode else LIGHT_THEME
@@ -314,6 +385,7 @@ class TodoApp:
                     activebackground=t["border"],
                     activeforeground=t["fg"]
                 )
+            self._bind_hover(btn, lambda val=value: self.sort_type.get() == val)
 
     # ═══════════════════════════════════════════════
     #  THEME
@@ -338,6 +410,7 @@ class TodoApp:
             activebackground=t["accent_hover"],
             activeforeground=t["accent_fg"]
         )
+        self._bind_hover(self.add_btn, lambda: True)
 
         # Separators
         for sep in [self.sep1, self.sep2, self.sep3]:
@@ -346,8 +419,6 @@ class TodoApp:
         # Toolbar
         self.toolbar.configure(bg=t["surface2"])
         self.toolbar_inner.configure(bg=t["surface2"])
-        self.filter_row.configure(bg=t["surface2"])
-        self.sort_row.configure(bg=t["surface2"])
         self.toolbar_divider.configure(bg=t["border"])
         self.filter_heading.configure(bg=t["surface2"], fg=t["muted_fg"])
         self.sort_heading.configure(bg=t["surface2"], fg=t["muted_fg"])
@@ -362,6 +433,34 @@ class TodoApp:
         self._update_filter_buttons()
         self._update_sort_buttons()
 
+        # Sidebar
+        self.sidebar.configure(bg=t["bg"])
+        self.sidebar_sep.configure(bg=t["border"])
+        self.content_frame.configure(bg=t["bg"])
+        self.cal_label.configure(bg=t["bg"], fg=t["muted_fg"])
+        self.cal_reset_btn.configure(
+            bg=t["bg"], fg=t["accent"],
+            activebackground=t["bg"], activeforeground=t["accent_hover"]
+        )
+        self.mini_cal.configure(
+            background=t["surface2"],
+            foreground=t["fg"],
+            headersbackground=t["surface"],
+            headersforeground=t["muted_fg"],
+            selectbackground=t["accent"],
+            selectforeground=t["accent_fg"],
+            normalbackground=t["surface2"],
+            normalforeground=t["fg"],
+            weekendbackground=t["surface"],
+            weekendforeground=t["fg"],
+            othermonthbackground=t["bg"],
+            othermonthforeground=t["muted_fg"],
+            bordercolor=t["border"],
+            tooltipbackground=t["surface2"],
+            tooltipforeground=t["fg"],
+        )
+        self.refresh_calendar()
+
         # Footer
         for w in [self.footer_frame, self.action_frame, self.right_frame]:
             w.configure(bg=t["bg"])
@@ -371,6 +470,8 @@ class TodoApp:
                 activebackground=t["border"],
                 activeforeground=t["fg"]
             )
+            self._bind_hover(btn, lambda: False,
+                             rest_bg=t["secondary_btn_bg"], hover_bg=t["border"])
         self.save_label.configure(bg=t["bg"], fg=t["muted_fg"])
         self.theme_button.configure(
             bg=t["surface2"], fg=t["muted_fg"],
@@ -378,6 +479,8 @@ class TodoApp:
             activeforeground=t["fg"],
             text="☀  Light" if self.dark_mode else "🌙  Dark"
         )
+        self._bind_hover(self.theme_button, lambda: False,
+                         rest_bg=t["surface2"], hover_bg=t["border"])
 
         # Treeview
         style = ttk.Style()
@@ -414,12 +517,14 @@ class TodoApp:
 
     def _configure_tags(self):
         if self.dark_mode:
+            self.task_tree.tag_configure("hover",   background="#2C3240")
             self.task_tree.tag_configure("done",    foreground="#4A4E5A")
             self.task_tree.tag_configure("overdue", foreground="#F87171")
             self.task_tree.tag_configure("high",    foreground="#F87171")
             self.task_tree.tag_configure("medium",  foreground="#FCD34D")
             self.task_tree.tag_configure("low",     foreground="#6EE7A0")
         else:
+            self.task_tree.tag_configure("hover",   background="#EDE8E1")
             self.task_tree.tag_configure("done",    foreground="#B0AAA4")
             self.task_tree.tag_configure("overdue", foreground="#DC2626")
             self.task_tree.tag_configure("high",    foreground="#B91C1C")
@@ -621,6 +726,96 @@ class TodoApp:
     #  FILTERING & SORTING
     # ═══════════════════════════════════════════════
 
+    def _sort_by_column(self, col):
+        """Called when a column header is clicked — toggles asc/desc."""
+        sort_key = self._col_sort_map.get(col, "alphabetical")
+        if self.sort_type.get() == sort_key:
+            self.sort_reverse = not self.sort_reverse   # flip direction
+        else:
+            self.sort_type.set(sort_key)
+            self.sort_reverse = False                   # reset to asc on new column
+        self._update_sort_buttons()
+        self.refresh_tasks()
+
+    # ═══════════════════════════════════════════════
+    #  CALENDAR SIDEBAR
+    # ═══════════════════════════════════════════════
+
+    def _on_calendar_day_click(self, event):
+        """Filter task list to the selected day."""
+        date_str = self.mini_cal.get_date()          # "yyyy-mm-dd"
+        try:
+            self._calendar_date_filter = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            self._calendar_date_filter = None
+        self.refresh_tasks()
+
+    def _calendar_reset(self):
+        """Clear the calendar day filter and show all tasks."""
+        self._calendar_date_filter = None
+        self.refresh_tasks()
+
+    def refresh_calendar(self):
+        """Re-draw task-day markers on the mini calendar."""
+        # Remove all existing events
+        for ev_id in self.mini_cal.get_calevents():
+            self.mini_cal.calevent_remove(ev_id)
+
+        today = datetime.now().date()
+        for task in self.manager.tasks:
+            if not task.due_date:
+                continue
+            due = task.due_date if not isinstance(task.due_date, str) else \
+                  datetime.strptime(task.due_date, "%Y-%m-%d").date()
+            if task.done:
+                tag = "done"
+            elif due < today:
+                tag = "overdue"
+            elif task.priority == "High":
+                tag = "high"
+            else:
+                tag = "normal"
+            self.mini_cal.calevent_create(due, task.name, tag)
+
+        # Style the tags on the calendar
+        if self.dark_mode:
+            self.mini_cal.tag_config("done",    background="#3A3F4B", foreground="#6EE7A0")
+            self.mini_cal.tag_config("overdue", background="#3D1A1A", foreground="#F87171")
+            self.mini_cal.tag_config("high",    background="#3D2A1A", foreground="#FCD34D")
+            self.mini_cal.tag_config("normal",  background="#1A2E3D", foreground="#93C5FD")
+        else:
+            self.mini_cal.tag_config("done",    background="#D1FAE5", foreground="#065F46")
+            self.mini_cal.tag_config("overdue", background="#FEE2E2", foreground="#991B1B")
+            self.mini_cal.tag_config("high",    background="#FEF3C7", foreground="#92400E")
+            self.mini_cal.tag_config("normal",  background="#DBEAFE", foreground="#1E40AF")
+
+    # ═══════════════════════════════════════════════
+    #  HOVER
+    # ═══════════════════════════════════════════════
+
+    def _on_tree_hover(self, event):
+        row_id = self.task_tree.identify_row(event.y)
+        if row_id == self._hovered_row:
+            return
+        # Clear previous hover tag
+        if self._hovered_row and self.task_tree.exists(self._hovered_row):
+            current_tags = list(self.task_tree.item(self._hovered_row, "tags"))
+            current_tags = [t for t in current_tags if t != "hover"]
+            self.task_tree.item(self._hovered_row, tags=current_tags)
+        # Apply hover tag to new row
+        self._hovered_row = row_id
+        if row_id:
+            current_tags = list(self.task_tree.item(row_id, "tags"))
+            if "hover" not in current_tags:
+                self.task_tree.item(row_id, tags=current_tags + ["hover"])
+
+    def _on_tree_leave(self, event):
+        if self._hovered_row and self.task_tree.exists(self._hovered_row):
+            current_tags = list(self.task_tree.item(self._hovered_row, "tags"))
+            current_tags = [t for t in current_tags if t != "hover"]
+            self.task_tree.item(self._hovered_row, tags=current_tags)
+        self._hovered_row = None
+
     def _on_tree_click(self, event):
         """Toggle task done/undone when the checkbox (Done) column is clicked."""
         region = self.task_tree.identify_region(event.x, event.y)
@@ -656,6 +851,9 @@ class TodoApp:
         search = self.search_var.get().lower().strip()
         if search:
             tasks = [t for t in tasks if search in t.name.lower() or search in t.description.lower()]
+        # Calendar day filter overrides everything else
+        if self._calendar_date_filter:
+            tasks = [t for t in tasks if t.due_date == self._calendar_date_filter]
         return tasks
 
     def get_sorted_tasks(self):
@@ -670,7 +868,7 @@ class TodoApp:
                 return {"High": 1, "Medium": 2, "Low": 3}.get(task.priority, 2)
             else:
                 return task.name.lower()
-        return sorted(tasks, key=sort_key)
+        return sorted(tasks, key=sort_key, reverse=self.sort_reverse)
 
     @staticmethod
     def _days_info(task):
@@ -724,9 +922,16 @@ class TodoApp:
 
         self._configure_tags()
 
-    # ═══════════════════════════════════════════════
-    #  AUTO-SAVE / CLOSE
-    # ═══════════════════════════════════════════════
+        # Update column headers with sort direction arrow
+        active_sort = self.sort_type.get()
+        arrow = "  ▼" if self.sort_reverse else "  ▲"
+        for col, sort_key in self._col_sort_map.items():
+            label = col + (arrow if sort_key == active_sort else "")
+            self.task_tree.heading(col, text=label,
+                                   command=lambda c=col: self._sort_by_column(c))
+
+        # Sync calendar markers with current tasks
+        self.refresh_calendar()
 
     def auto_save(self):
         save_tasks(self.manager)

@@ -11,7 +11,7 @@
         "description": "asd",
         "due_date": "2026-08-19",
         "priority": "Medium",
-        "done": true
+        "done": false
     },
     {
         "name": "z",
@@ -25,7 +25,7 @@
         "description": "Wynie\u015b\u0107 \u015bmieci",
         "due_date": "2026-03-07",
         "priority": "Low",
-        "done": false
+        "done": true
     },
     {
         "name": "Drugi p\u0142otek",
