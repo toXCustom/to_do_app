@@ -262,6 +262,63 @@ class TodoApp:
         )
         self.cal_reset_btn.pack(pady=(6, 0))
 
+        # ── Dashboard Stats Panel ─────────────────────
+        self.stats_sep = tk.Frame(self.sidebar, height=1)
+        self.stats_sep.pack(fill=tk.X, padx=8, pady=(14, 0))
+
+        self.stats_label = tk.Label(
+            self.sidebar, text="📊  Stats",
+            font=("TkDefaultFont", 10, "bold")
+        )
+        self.stats_label.pack(anchor="w", padx=10, pady=(8, 6))
+
+        self.stats_frame = tk.Frame(self.sidebar)
+        self.stats_frame.pack(fill=tk.X, padx=8)
+
+        # Each stat row: icon + label on left, value on right
+        self._stat_widgets = {}
+        stat_rows = [
+            ("total",   "📋", "Total"),
+            ("active",  "⏳", "Active"),
+            ("done",    "✅", "Done"),
+            ("overdue", "🔴", "Overdue"),
+            ("today",   "📅", "Due today"),
+            ("week",    "📆", "This week"),
+        ]
+        for key, icon, label in stat_rows:
+            row = tk.Frame(self.stats_frame)
+            row.pack(fill=tk.X, pady=2)
+            lbl = tk.Label(row, text=f"{icon}  {label}",
+                           font=("TkDefaultFont", 9), anchor="w")
+            lbl.pack(side=tk.LEFT)
+            val = tk.Label(row, text="—",
+                           font=("TkDefaultFont", 9, "bold"), anchor="e")
+            val.pack(side=tk.RIGHT)
+            self._stat_widgets[key] = (row, lbl, val)
+
+        # Completion progress bar (canvas-drawn)
+        self.progress_frame = tk.Frame(self.sidebar)
+        self.progress_frame.pack(fill=tk.X, padx=10, pady=(10, 4))
+
+        self.progress_header = tk.Frame(self.progress_frame)
+        self.progress_header.pack(fill=tk.X)
+        self.progress_title = tk.Label(
+            self.progress_header, text="Completion",
+            font=("TkDefaultFont", 8), anchor="w"
+        )
+        self.progress_title.pack(side=tk.LEFT)
+        self.progress_pct_label = tk.Label(
+            self.progress_header, text="0%",
+            font=("TkDefaultFont", 8, "bold"), anchor="e"
+        )
+        self.progress_pct_label.pack(side=tk.RIGHT)
+
+        self.progress_canvas = tk.Canvas(
+            self.progress_frame, height=6, highlightthickness=0
+        )
+        self.progress_canvas.pack(fill=tk.X, pady=(3, 0))
+
+
         # Vertical divider between sidebar and list
         self.sidebar_sep = tk.Frame(self.content_frame, width=1)
         self.sidebar_sep.pack(side=tk.LEFT, fill=tk.Y, padx=(8, 0))
@@ -461,6 +518,21 @@ class TodoApp:
             tooltipforeground=t["fg"],
         )
         self.refresh_calendar()
+
+        # Stats panel
+        self.stats_sep.configure(bg=t["border"])
+        self.stats_label.configure(bg=t["bg"], fg=t["muted_fg"])
+        self.stats_frame.configure(bg=t["bg"])
+        self.progress_frame.configure(bg=t["bg"])
+        self.progress_header.configure(bg=t["bg"])
+        self.progress_title.configure(bg=t["bg"], fg=t["muted_fg"])
+        self.progress_pct_label.configure(bg=t["bg"], fg=t["fg"])
+        self.progress_canvas.configure(bg=t["bg"])
+        for key, (row, lbl, val) in self._stat_widgets.items():
+            row.configure(bg=t["bg"])
+            lbl.configure(bg=t["bg"], fg=t["muted_fg"])
+            val.configure(bg=t["bg"], fg=t["fg"])
+        self.refresh_stats()
 
         # Footer
         for w in [self.footer_frame, self.action_frame, self.right_frame]:
@@ -907,8 +979,67 @@ class TodoApp:
             self.task_tree.heading(col, text=label,
                                    command=lambda c=col: self._sort_by_column(c))
 
-        # Sync calendar markers with current tasks
+        # Sync calendar markers and dashboard stats
         self.refresh_calendar()
+        self.refresh_stats()
+
+    def refresh_stats(self):
+        """Recalculate all dashboard stat values and redraw the progress bar."""
+        from datetime import date, timedelta
+        today = date.today()
+        week_end = today + timedelta(days=7)
+        all_tasks = self.manager.tasks
+
+        total   = len(all_tasks)
+        done    = sum(1 for t in all_tasks if t.done)
+        active  = total - done
+        overdue = sum(1 for t in all_tasks if t.is_overdue)
+        due_today = sum(
+            1 for t in all_tasks
+            if t.due_date and not t.done and t.due_date == today
+        )
+        due_week  = sum(
+            1 for t in all_tasks
+            if t.due_date and not t.done and today <= t.due_date <= week_end
+        )
+        pct = int(done / total * 100) if total else 0
+
+        # Update stat value labels
+        values = {
+            "total":   str(total),
+            "active":  str(active),
+            "done":    str(done),
+            "overdue": str(overdue) if overdue == 0 else f"⚠ {overdue}",
+            "today":   str(due_today),
+            "week":    str(due_week),
+        }
+        t = DARK_THEME if self.dark_mode else LIGHT_THEME
+        for key, (row, lbl, val) in self._stat_widgets.items():
+            val.configure(text=values[key])
+            # Highlight overdue count in red if non-zero
+            if key == "overdue" and overdue > 0:
+                val.configure(fg="#F87171" if self.dark_mode else "#DC2626")
+            elif key == "today" and due_today > 0:
+                val.configure(fg=t["accent"])
+            else:
+                val.configure(fg=t["fg"])
+
+        # Progress bar
+        self.progress_pct_label.configure(text=f"{pct}%")
+        self.progress_canvas.update_idletasks()
+        w = self.progress_canvas.winfo_width() or 180
+        self.progress_canvas.delete("all")
+        # Track
+        self.progress_canvas.create_rectangle(
+            0, 0, w, 6, fill=t["border"], outline="", width=0
+        )
+        # Fill
+        if pct > 0:
+            fill_color = t["accent"] if pct < 100 else "#4ADE80"
+            self.progress_canvas.create_rectangle(
+                0, 0, int(w * pct / 100), 6,
+                fill=fill_color, outline="", width=0
+            )
 
     def auto_save(self):
         save_tasks(self.manager)

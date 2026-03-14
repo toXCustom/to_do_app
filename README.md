@@ -345,9 +345,10 @@ Bug fixed:
 -
 
 
---- version 0.3.102 ---
+--- version 0.3.160 --- 14.03.2026
 Changes:
-- 
+- added the dashboard stats panel under the calendar
+- added the Category to the Tasks
 
 Bug fixed:
 -
