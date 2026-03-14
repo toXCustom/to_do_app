@@ -5,6 +5,7 @@ from tasks import TaskManager
 from storage import save_tasks, load_tasks, save_config, load_config
 from datetime import datetime
 from tkcalendar import Calendar
+import logic
 
 # ---------- Theme Constants ----------
 LIGHT_THEME = {
@@ -840,47 +841,23 @@ class TodoApp:
         return None
 
     def get_filtered_tasks(self):
-        tasks = self.manager.tasks
-        filter_by = self.filter_type.get()
-        if filter_by == "Active":
-            tasks = [t for t in tasks if not t.done]
-        elif filter_by == "Completed":
-            tasks = [t for t in tasks if t.done]
-        elif filter_by == "Overdue":
-            tasks = [t for t in tasks if t.is_overdue]
-        search = self.search_var.get().lower().strip()
-        if search:
-            tasks = [t for t in tasks if search in t.name.lower() or search in t.description.lower()]
-        # Calendar day filter overrides everything else
-        if self._calendar_date_filter:
-            tasks = [t for t in tasks if t.due_date == self._calendar_date_filter]
-        return tasks
+        return logic.get_filtered_tasks(
+            self.manager.tasks,
+            self.filter_type.get(),
+            self.search_var.get(),
+            self._calendar_date_filter,
+        )
 
     def get_sorted_tasks(self):
-        tasks = self.get_filtered_tasks()
-        sort_by = self.sort_type.get()
-        def sort_key(task):
-            if sort_by == "due_date":
-                return task.due_date if task.due_date else datetime.max.date()
-            elif sort_by == "creation_date":
-                return task.created_at
-            elif sort_by == "priority":
-                return {"High": 1, "Medium": 2, "Low": 3}.get(task.priority, 2)
-            else:
-                return task.name.lower()
-        return sorted(tasks, key=sort_key, reverse=self.sort_reverse)
+        return logic.get_sorted_tasks(
+            self.get_filtered_tasks(),
+            self.sort_type.get(),
+            self.sort_reverse,
+        )
 
     @staticmethod
     def _days_info(task):
-        """Human-readable days until/since due date."""
-        if not task.due_date:
-            return ""
-        days_left = (task.due_date - datetime.now().date()).days
-        if days_left > 0:
-            return f"{days_left} days left"
-        if days_left == 0:
-            return "Due today"
-        return f"{abs(days_left)} days overdue"
+        return logic.days_info(task)
 
     # ═══════════════════════════════════════════════
     #  REFRESH
