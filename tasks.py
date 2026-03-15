@@ -7,6 +7,7 @@ class Task:
         self.done = False
         self.due_date = due_date  # format YYYY-MM-DD
         self.priority = priority  # High / Medium / Low
+        self.category = "General"
         self.created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.update_status()
 
@@ -24,6 +25,7 @@ class Task:
             "done": self.done,
             "due_date": self.due_date,
             "priority": self.priority,
+            "category": self.category,
             "created_at": self.created_at
         }
 
@@ -36,6 +38,7 @@ class Task:
             data.get("priority", "Medium")
         )
         task.done = data.get("done", False)
+        task.category = data.get("category", "General")
         task.created_at = data.get("created_at", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         task.update_status()
         return task
@@ -51,6 +54,7 @@ class TaskManager:
 
         task = Task(name, description, due_date, priority)
         self.tasks.append(task)
+        return task
 
     def delete_task(self, name):
         self.tasks = [t for t in self.tasks if t.name != name]

@@ -4,6 +4,7 @@
         "description": "qwe",
         "due_date": "2026-04-15",
         "priority": "Low",
+        "category": "General",
         "done": false
     },
     {
@@ -11,6 +12,7 @@
         "description": "asd",
         "due_date": "2026-08-19",
         "priority": "Medium",
+        "category": "General",
         "done": false
     },
     {
@@ -18,6 +20,7 @@
         "description": "zxc",
         "due_date": "2027-04-29",
         "priority": "High",
+        "category": "General",
         "done": false
     },
     {
@@ -25,6 +28,7 @@
         "description": "Wynie\u015b\u0107 \u015bmieci",
         "due_date": "2026-03-07",
         "priority": "Low",
+        "category": "General",
         "done": true
     },
     {
@@ -32,6 +36,7 @@
         "description": "Zrobi\u0107 drugi p\u0142otek do grz\u0105dki zewn\u0119trznej",
         "due_date": "2026-03-06",
         "priority": "High",
+        "category": "General",
         "done": false
     }
 ]

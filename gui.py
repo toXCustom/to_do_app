@@ -6,6 +6,7 @@ from storage import save_tasks, load_tasks, save_config, load_config
 from datetime import datetime
 from tkcalendar import Calendar
 import logic
+import categories as cat_module
 
 # ---------- Theme Constants ----------
 LIGHT_THEME = {
@@ -64,6 +65,8 @@ class TodoApp:
         self.sort_reverse = False          # ascending by default
         self.filter_type = tk.StringVar(value=config.get("filter", "All"))
         self._calendar_date_filter = None  # set when user clicks a calendar day
+        self.categories = cat_module.load_categories(config)
+        self._category_filter = None       # None = show all categories
         self.search_var = tk.StringVar()
         self.search_var.trace_add("write", lambda *args: self.refresh_tasks())
 
@@ -319,6 +322,33 @@ class TodoApp:
         self.progress_canvas.pack(fill=tk.X, pady=(3, 0))
 
 
+        # ── Category Filter Panel ────────────────────
+        self.cat_sep = tk.Frame(self.sidebar, height=1)
+        self.cat_sep.pack(fill=tk.X, padx=8, pady=(12, 0))
+
+        cat_header_row = tk.Frame(self.sidebar)
+        cat_header_row.pack(fill=tk.X, padx=10, pady=(8, 4))
+
+        self.cat_heading = tk.Label(
+            cat_header_row, text="🏷  Categories",
+            font=("TkDefaultFont", 10, "bold")
+        )
+        self.cat_heading.pack(side=tk.LEFT)
+
+        self.manage_cat_btn = tk.Button(
+            cat_header_row, text="＋ Manage",
+            relief="flat", cursor="hand2",
+            font=("TkDefaultFont", 8),
+            command=self._manage_categories_gui
+        )
+        self.manage_cat_btn.pack(side=tk.RIGHT)
+
+        self.cat_filter_frame = tk.Frame(self.sidebar)
+        self.cat_filter_frame.pack(fill=tk.X, padx=8, pady=(0, 8))
+        self._cat_filter_buttons = {}
+        self._build_category_filter_buttons()
+
+
         # Vertical divider between sidebar and list
         self.sidebar_sep = tk.Frame(self.content_frame, width=1)
         self.sidebar_sep.pack(side=tk.LEFT, fill=tk.Y, padx=(8, 0))
@@ -328,7 +358,7 @@ class TodoApp:
         tree_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         # "Done" is the first column so the checkbox sits on the left edge
-        columns = ("Done", "Name", "Priority", "Due", "DaysLeft", "Description")
+        columns = ("Done", "Name", "Category", "Priority", "Due", "DaysLeft", "Description")
         self.task_tree = ttk.Treeview(
             tree_frame, columns=columns,
             show="headings", height=15
@@ -336,11 +366,12 @@ class TodoApp:
 
         col_config = {
             "Done":        (40,  "center"),
-            "Name":        (200, "w"),
+            "Name":        (180, "w"),
+            "Category":    (100, "center"),
             "Priority":    (80,  "center"),
             "Due":         (100, "center"),
-            "DaysLeft":    (130, "center"),
-            "Description": (300, "w"),
+            "DaysLeft":    (120, "center"),
+            "Description": (260, "w"),
         }
         for col, (width, anchor) in col_config.items():
             self.task_tree.heading(col, text="" if col == "Done" else col)
@@ -350,6 +381,7 @@ class TodoApp:
         # Map column names to sort keys and bind click handlers
         self._col_sort_map = {
             "Name":        "alphabetical",
+            "Category":    "category",
             "Priority":    "priority",
             "Due":         "due_date",
             "DaysLeft":    "due_date",
@@ -534,6 +566,18 @@ class TodoApp:
             val.configure(bg=t["bg"], fg=t["fg"])
         self.refresh_stats()
 
+        # Category filter panel
+        self.cat_sep.configure(bg=t["border"])
+        self.cat_heading.configure(bg=t["bg"], fg=t["muted_fg"])
+        cat_header_row = self.cat_heading.master
+        cat_header_row.configure(bg=t["bg"])
+        self.manage_cat_btn.configure(
+            bg=t["bg"], fg=t["accent"],
+            activebackground=t["bg"], activeforeground=t["accent_hover"]
+        )
+        self.cat_filter_frame.configure(bg=t["bg"])
+        self._build_category_filter_buttons()
+
         # Footer
         for w in [self.footer_frame, self.action_frame, self.right_frame]:
             w.configure(bg=t["bg"])
@@ -606,11 +650,133 @@ class TodoApp:
 
     def save_ui_config(self):
         save_config({
-            "dark_mode": self.dark_mode,
-            "sort": self.sort_type.get(),
-            "filter": self.filter_type.get(),
-            "geometry": self.root.geometry(),
+            "dark_mode":  self.dark_mode,
+            "sort":       self.sort_type.get(),
+            "filter":     self.filter_type.get(),
+            "geometry":   self.root.geometry(),
+            "categories": self.categories,
         })
+
+    # ═══════════════════════════════════════════════
+    #  CATEGORIES
+    # ═══════════════════════════════════════════════
+
+    def _build_category_filter_buttons(self):
+        """(Re)build the category pill buttons in the sidebar."""
+        for w in self.cat_filter_frame.winfo_children():
+            w.destroy()
+        self._cat_filter_buttons.clear()
+        t = DARK_THEME if self.dark_mode else LIGHT_THEME
+
+        # "All" button
+        all_btn = tk.Button(
+            self.cat_filter_frame, text="All",
+            relief="flat", cursor="hand2",
+            font=("TkDefaultFont", 9, "bold"),
+            padx=8, pady=3,
+            command=lambda: self._set_category_filter(None)
+        )
+        all_btn.pack(fill=tk.X, pady=1)
+        self._cat_filter_buttons[None] = all_btn
+
+        for cat in self.categories:
+            bg, fg = cat_module.get_color(cat, self.categories, self.dark_mode)
+            btn = tk.Button(
+                self.cat_filter_frame, text=cat,
+                relief="flat", cursor="hand2",
+                font=("TkDefaultFont", 9),
+                padx=8, pady=3,
+                bg=bg, fg=fg,
+                activebackground=bg, activeforeground=fg,
+                command=lambda c=cat: self._set_category_filter(c)
+            )
+            btn.pack(fill=tk.X, pady=1)
+            self._cat_filter_buttons[cat] = btn
+
+        self._update_category_buttons()
+
+    def _set_category_filter(self, cat):
+        self._category_filter = cat
+        self._update_category_buttons()
+        self.refresh_tasks()
+
+    def _update_category_buttons(self):
+        t = DARK_THEME if self.dark_mode else LIGHT_THEME
+        active = self._category_filter
+        for key, btn in self._cat_filter_buttons.items():
+            if key == active:
+                btn.configure(relief="solid", bd=2)
+            else:
+                btn.configure(relief="flat", bd=0)
+        # "All" button colour
+        all_btn = self._cat_filter_buttons.get(None)
+        if all_btn:
+            if active is None:
+                all_btn.configure(bg=t["accent"], fg=t["accent_fg"])
+            else:
+                all_btn.configure(bg=t["surface2"], fg=t["muted_fg"])
+
+    def _manage_categories_gui(self):
+        """Dialog to add/remove custom categories."""
+        top = self._make_dialog("Manage Categories")
+        t = DARK_THEME if self.dark_mode else LIGHT_THEME
+        top.geometry("320x420")
+
+        tk.Label(top, text="Your categories:", **self._lbl(t)).pack(anchor="w", padx=14, pady=(12, 4))
+
+        list_frame = tk.Frame(top, bg=t["surface2"], bd=1, relief="flat")
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=14, pady=4)
+
+        def rebuild_list():
+            for w in list_frame.winfo_children():
+                w.destroy()
+            for cat in self.categories:
+                row = tk.Frame(list_frame, bg=t["surface2"])
+                row.pack(fill=tk.X, padx=6, pady=2)
+                bg, fg = cat_module.get_color(cat, self.categories, self.dark_mode)
+                tk.Label(row, text=cat, bg=bg, fg=fg,
+                         font=("TkDefaultFont", 9, "bold"),
+                         padx=8, pady=2).pack(side=tk.LEFT)
+                if cat != "General":
+                    def make_delete(c=cat):
+                        def do():
+                            self.categories.remove(c)
+                            # Re-assign tasks in that category to General
+                            for task in self.manager.tasks:
+                                if getattr(task, "category", "General") == c:
+                                    task.category = "General"
+                            self.save_ui_config()
+                            self._build_category_filter_buttons()
+                            rebuild_list()
+                            self.refresh_tasks()
+                        return do
+                    tk.Button(row, text="✕", relief="flat", cursor="hand2",
+                              bg=t["surface2"], fg=t["muted_fg"],
+                              font=("TkDefaultFont", 8),
+                              command=make_delete()).pack(side=tk.RIGHT)
+
+        rebuild_list()
+
+        # Add new category
+        add_frame = tk.Frame(top, bg=t["bg"])
+        add_frame.pack(fill=tk.X, padx=14, pady=8)
+        new_entry = self._entry(add_frame, t, width=20)
+        new_entry.pack(side=tk.LEFT, padx=(0, 6), ipady=4)
+
+        def add_category():
+            name = new_entry.get().strip()
+            if not name or name in self.categories:
+                return
+            self.categories.append(name)
+            new_entry.delete(0, tk.END)
+            self.save_ui_config()
+            self._build_category_filter_buttons()
+            rebuild_list()
+
+        self._btn(add_frame, t, "Add", add_category, primary=True).pack(side=tk.LEFT)
+        new_entry.bind("<Return>", lambda e: add_category())
+
+        self._btn(top, t, "Done", top.destroy).pack(pady=(0, 12))
 
     # ═══════════════════════════════════════════════
     #  TASK ACTIONS
@@ -629,42 +795,54 @@ class TodoApp:
         desc_entry = self._entry(top, t, width=38)
         desc_entry.grid(row=1, column=1, padx=10, pady=8)
 
-        tk.Label(top, text="Priority:", **self._lbl(t)).grid(row=2, column=0, sticky="e", padx=10, pady=8)
+        tk.Label(top, text="Category:", **self._lbl(t)).grid(row=2, column=0, sticky="e", padx=10, pady=8)
+        cat_var = tk.StringVar(value=self._category_filter or "General")
+        cat_menu = tk.OptionMenu(top, cat_var, *self.categories)
+        cat_menu.configure(bg=t["surface2"], fg=t["fg"], activebackground=t["border"], relief="flat")
+        cat_menu.grid(row=2, column=1, sticky="w", padx=10, pady=8)
+
+        tk.Label(top, text="Priority:", **self._lbl(t)).grid(row=3, column=0, sticky="e", padx=10, pady=8)
         priority_var = tk.StringVar(value="Medium")
         priority_menu = tk.OptionMenu(top, priority_var, "High", "Medium", "Low")
         priority_menu.configure(bg=t["surface2"], fg=t["fg"], activebackground=t["border"], relief="flat")
-        priority_menu.grid(row=2, column=1, sticky="w", padx=10, pady=8)
+        priority_menu.grid(row=3, column=1, sticky="w", padx=10, pady=8)
 
-        tk.Label(top, text="Due Date:", **self._lbl(t)).grid(row=3, column=0, sticky="ne", padx=10, pady=8)
+        tk.Label(top, text="Due Date:", **self._lbl(t)).grid(row=4, column=0, sticky="ne", padx=10, pady=8)
         due_var = tk.StringVar()
         cal = Calendar(top, selectmode="day", date_pattern="yyyy-mm-dd")
-        cal.grid(row=3, column=1, padx=10, pady=8)
+        cal.grid(row=4, column=1, padx=10, pady=8)
 
         due_lbl = tk.Label(top, text="No date selected", font=("TkDefaultFont", 10), bg=t["bg"], fg=t["muted_fg"])
-        due_lbl.grid(row=4, column=1, sticky="w", padx=10)
+        due_lbl.grid(row=5, column=1, sticky="w", padx=10)
 
         def select_due():
             due_var.set(cal.get_date())
             due_lbl.configure(text=f"Selected: {due_var.get()}")
 
-        self._btn(top, t, "Select Date", select_due).grid(row=4, column=0, sticky="e", padx=10, pady=4)
+        self._btn(top, t, "Select Date", select_due).grid(row=5, column=0, sticky="e", padx=10, pady=4)
 
         def confirm():
             name = name_entry.get().strip()
             if not name:
                 messagebox.showerror("Error", "Task must have a name!", parent=top)
                 return
-            self.manager.add_task(
+            task = self.manager.add_task(
                 name,
                 desc_entry.get().strip(),
                 due_var.get() or None,
                 priority_var.get()
             )
+            if task:
+                task.category = cat_var.get()
+            else:
+                # Fallback: set on last added task
+                if self.manager.tasks:
+                    self.manager.tasks[-1].category = cat_var.get()
             self.refresh_tasks()
             save_tasks(self.manager)
             top.destroy()
 
-        self._btn(top, t, "Add Task", confirm, primary=True).grid(row=5, column=0, columnspan=2, pady=14)
+        self._btn(top, t, "Add Task", confirm, primary=True).grid(row=6, column=0, columnspan=2, pady=14)
 
     def edit_task_gui(self):
         selected_item = self.task_tree.selection()
@@ -688,20 +866,27 @@ class TodoApp:
         desc_entry.insert(0, task_to_edit.description)
         desc_entry.grid(row=1, column=1, padx=10, pady=8)
 
-        tk.Label(top, text="Priority:", **self._lbl(t)).grid(row=2, column=0, sticky="e", padx=10, pady=8)
+        tk.Label(top, text="Category:", **self._lbl(t)).grid(row=2, column=0, sticky="e", padx=10, pady=8)
+        current_cat = getattr(task_to_edit, "category", "General")
+        cat_var = tk.StringVar(value=current_cat)
+        cat_menu = tk.OptionMenu(top, cat_var, *self.categories)
+        cat_menu.configure(bg=t["surface2"], fg=t["fg"], activebackground=t["border"], relief="flat")
+        cat_menu.grid(row=2, column=1, sticky="w", padx=10, pady=8)
+
+        tk.Label(top, text="Priority:", **self._lbl(t)).grid(row=3, column=0, sticky="e", padx=10, pady=8)
         priority_var = tk.StringVar(value=task_to_edit.priority)
         priority_menu = tk.OptionMenu(top, priority_var, "High", "Medium", "Low")
         priority_menu.configure(bg=t["surface2"], fg=t["fg"], activebackground=t["border"], relief="flat")
-        priority_menu.grid(row=2, column=1, sticky="w", padx=10, pady=8)
+        priority_menu.grid(row=3, column=1, sticky="w", padx=10, pady=8)
 
-        tk.Label(top, text="Due Date:", **self._lbl(t)).grid(row=3, column=0, sticky="ne", padx=10, pady=8)
+        tk.Label(top, text="Due Date:", **self._lbl(t)).grid(row=4, column=0, sticky="ne", padx=10, pady=8)
         init_date = task_to_edit.due_date if task_to_edit.due_date else datetime.now().date()
         cal = Calendar(
             top, selectmode="day",
             year=init_date.year, month=init_date.month, day=init_date.day,
             date_pattern="yyyy-mm-dd"
         )
-        cal.grid(row=3, column=1, padx=10, pady=8)
+        cal.grid(row=4, column=1, padx=10, pady=8)
 
         due_var = tk.StringVar(value=task_to_edit.due_date.strftime("%Y-%m-%d") if task_to_edit.due_date else "")
         due_lbl = tk.Label(
@@ -709,18 +894,19 @@ class TodoApp:
             text=f"Selected: {due_var.get()}" if due_var.get() else "No date selected",
             font=("TkDefaultFont", 10), bg=t["bg"], fg=t["muted_fg"]
         )
-        due_lbl.grid(row=4, column=1, sticky="w", padx=10)
+        due_lbl.grid(row=5, column=1, sticky="w", padx=10)
 
         def select_due():
             due_var.set(cal.get_date())
             due_lbl.configure(text=f"Selected: {due_var.get()}")
 
-        self._btn(top, t, "Select Date", select_due).grid(row=4, column=0, sticky="e", padx=10, pady=4)
+        self._btn(top, t, "Select Date", select_due).grid(row=5, column=0, sticky="e", padx=10, pady=4)
 
         def confirm():
             new_due_str = cal.get_date()
             task_to_edit.name = name_entry.get().strip()
             task_to_edit.description = desc_entry.get().strip()
+            task_to_edit.category = cat_var.get()
             task_to_edit.priority = priority_var.get()
             task_to_edit.due_date = datetime.strptime(new_due_str, "%Y-%m-%d").date() if new_due_str else None
             task_to_edit.update_status()
@@ -728,7 +914,7 @@ class TodoApp:
             save_tasks(self.manager)
             top.destroy()
 
-        self._btn(top, t, "Save Changes", confirm, primary=True).grid(row=5, column=0, columnspan=2, pady=14)
+        self._btn(top, t, "Save Changes", confirm, primary=True).grid(row=6, column=0, columnspan=2, pady=14)
         self.root.wait_window(top)
 
     def delete_task_gui(self):
@@ -913,12 +1099,15 @@ class TodoApp:
         return None
 
     def get_filtered_tasks(self):
-        return logic.get_filtered_tasks(
+        tasks = logic.get_filtered_tasks(
             self.manager.tasks,
             self.filter_type.get(),
             self.search_var.get(),
             self._calendar_date_filter,
         )
+        if self._category_filter:
+            tasks = [t for t in tasks if getattr(t, "category", "General") == self._category_filter]
+        return tasks
 
     def get_sorted_tasks(self):
         return logic.get_sorted_tasks(
@@ -953,9 +1142,10 @@ class TodoApp:
             days_info = "" if t.done else self._days_info(t)
             checkbox  = "☑" if t.done else "☐"
 
+            category = getattr(t, "category", "General")
             row_id = self.task_tree.insert(
                 "", tk.END,
-                values=(checkbox, t.name, t.priority, due_str, days_info, t.description)
+                values=(checkbox, t.name, category, t.priority, due_str, days_info, t.description)
             )
 
             if t.done:

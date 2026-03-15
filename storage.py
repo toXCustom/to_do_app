@@ -18,6 +18,7 @@ def save_tasks(manager):
             "description": task.description,
             "due_date": task.due_date.strftime("%Y-%m-%d") if task.due_date else None,
             "priority": task.priority,
+            "category": getattr(task, "category", "General"),
             "done": task.done
         })
 
@@ -49,6 +50,7 @@ def load_tasks(manager):
             )
 
             task.done = task_data.get("done", False)
+            task.category = task_data.get("category", "General")
 
             manager.tasks.append(task)
 

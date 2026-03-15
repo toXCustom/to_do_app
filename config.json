@@ -2,5 +2,13 @@
     "dark_mode": true,
     "sort": "alphabetical",
     "filter": "All",
-    "geometry": "1209x673+477+277"
+    "geometry": "1209x673+563+296",
+    "categories": [
+        "General",
+        "Work",
+        "Personal",
+        "Shopping",
+        "Health",
+        "Finance"
+    ]
 }

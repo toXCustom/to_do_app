@@ -1,4 +1,6 @@
 """
+logic.py  —  Pure business logic extracted from app.py
+=======================================================
 No tkinter, no tkcalendar, no GUI imports whatsoever.
 Import this from both app.py and test_todo.py.
 """
@@ -76,6 +78,8 @@ def get_sorted_tasks(tasks, sort_by, reverse=False):
             return _as_datetime(task.created_at)
         elif sort_by == "priority":
             return {"High": 1, "Medium": 2, "Low": 3}.get(task.priority, 2)
+        elif sort_by == "category":
+            return getattr(task, "category", "General").lower()
         else:   # alphabetical
             return task.name.lower()
 
