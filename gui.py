@@ -8,6 +8,8 @@ from tkcalendar import Calendar
 import logic
 import categories as cat_module
 
+PRIORITY_ICONS = {"High": "🔥 High", "Medium": "⚡ Medium", "Low": "🌿 Low"}
+
 # ---------- Theme Constants ----------
 LIGHT_THEME = {
     "bg":               "#FAF7F2",   # warm parchment
@@ -74,6 +76,7 @@ class TodoApp:
         self.apply_theme()
         self.refresh_tasks()
         self.auto_save()
+        self.root.after(100, self._bind_cal_day_tooltips)  # after widgets fully rendered
 
     # ═══════════════════════════════════════════════
     #  UI BUILD
@@ -255,6 +258,11 @@ class TodoApp:
         )
         self.mini_cal.pack(fill=tk.X, padx=4)
         self.mini_cal.bind("<<CalendarSelected>>", self._on_calendar_day_click)
+        # Tooltip state
+        self._cal_tooltip_win  = None
+        self._cal_tooltip_date = None
+        # Rebind tooltips when user navigates month or year (bind after build)
+        self.mini_cal.after(200, self._bind_nav_buttons)
 
         # "Show all" link below the calendar
         self.cal_reset_btn = tk.Button(
@@ -802,8 +810,8 @@ class TodoApp:
         cat_menu.grid(row=2, column=1, sticky="w", padx=10, pady=8)
 
         tk.Label(top, text="Priority:", **self._lbl(t)).grid(row=3, column=0, sticky="e", padx=10, pady=8)
-        priority_var = tk.StringVar(value="Medium")
-        priority_menu = tk.OptionMenu(top, priority_var, "High", "Medium", "Low")
+        priority_var = tk.StringVar(value="⚡ Medium")
+        priority_menu = tk.OptionMenu(top, priority_var, "🔥 High", "⚡ Medium", "🌿 Low")
         priority_menu.configure(bg=t["surface2"], fg=t["fg"], activebackground=t["border"], relief="flat")
         priority_menu.grid(row=3, column=1, sticky="w", padx=10, pady=8)
 
@@ -830,7 +838,7 @@ class TodoApp:
                 name,
                 desc_entry.get().strip(),
                 due_var.get() or None,
-                priority_var.get()
+                priority_var.get().split()[-1]  # strip icon prefix
             )
             if task:
                 task.category = cat_var.get()
@@ -874,8 +882,8 @@ class TodoApp:
         cat_menu.grid(row=2, column=1, sticky="w", padx=10, pady=8)
 
         tk.Label(top, text="Priority:", **self._lbl(t)).grid(row=3, column=0, sticky="e", padx=10, pady=8)
-        priority_var = tk.StringVar(value=task_to_edit.priority)
-        priority_menu = tk.OptionMenu(top, priority_var, "High", "Medium", "Low")
+        priority_var = tk.StringVar(value=PRIORITY_ICONS.get(task_to_edit.priority, task_to_edit.priority))
+        priority_menu = tk.OptionMenu(top, priority_var, "🔥 High", "⚡ Medium", "🌿 Low")
         priority_menu.configure(bg=t["surface2"], fg=t["fg"], activebackground=t["border"], relief="flat")
         priority_menu.grid(row=3, column=1, sticky="w", padx=10, pady=8)
 
@@ -907,7 +915,8 @@ class TodoApp:
             task_to_edit.name = name_entry.get().strip()
             task_to_edit.description = desc_entry.get().strip()
             task_to_edit.category = cat_var.get()
-            task_to_edit.priority = priority_var.get()
+            raw = priority_var.get().split()[-1]  # "🔥 High" → "High"
+            task_to_edit.priority = raw
             task_to_edit.due_date = datetime.strptime(new_due_str, "%Y-%m-%d").date() if new_due_str else None
             task_to_edit.update_status()
             self.refresh_tasks()
@@ -1047,6 +1056,152 @@ class TodoApp:
             self.mini_cal.tag_config("overdue", background="#FEE2E2", foreground="#991B1B")
             self.mini_cal.tag_config("high",    background="#FEF3C7", foreground="#92400E")
             self.mini_cal.tag_config("normal",  background="#DBEAFE", foreground="#1E40AF")
+        # Re-bind tooltips after calendar redraws (150ms lets tkcalendar finish rendering)
+        self.mini_cal.after(150, self._bind_cal_day_tooltips)
+
+    # ═══════════════════════════════════════════════
+    #  CALENDAR TOOLTIP
+    # ═══════════════════════════════════════════════
+
+    def _bind_nav_buttons(self):
+        """Attach rebind triggers to the four month/year navigation buttons."""
+        for btn in [self.mini_cal._l_month, self.mini_cal._r_month,
+                    self.mini_cal._l_year,  self.mini_cal._r_year]:
+            btn.bind("<ButtonRelease-1>",
+                     lambda e: self.mini_cal.after(150, self._bind_cal_day_tooltips),
+                     add="+")
+
+    def _bind_cal_day_tooltips(self):
+        """
+        Bind <Enter>/<Leave> on each day cell in mini_cal._calendar (a 6x7 grid
+        of ttk.Label widgets). Uses calendar.monthcalendar to map each cell to
+        an exact date — cells that belong to prev/next month get 0 and are skipped.
+        """
+        import calendar as cal_lib
+        from datetime import date as dt_date
+
+        cal   = self.mini_cal
+        year  = cal._date.year
+        month = cal._date.month
+
+        # monthcalendar: list of 6 (or 5) weeks; 0 means day is outside this month
+        weeks = cal_lib.monthcalendar(year, month)
+        while len(weeks) < 6:          # pad to 6 rows to match _calendar
+            weeks.append([0] * 7)
+
+        for row_idx, (row_labels, week_days) in enumerate(zip(cal._calendar, weeks)):
+            for col_idx, (label, day_num) in enumerate(zip(row_labels, week_days)):
+                # Remove any previous bindings first
+                label.unbind("<Enter>")
+                label.unbind("<Leave>")
+                if day_num == 0:
+                    continue           # other-month greyed cell — skip
+                cell_date = dt_date(year, month, day_num)
+                label.bind("<Enter>",
+                           lambda e, d=cell_date: self._on_cal_day_enter(e, d))
+                label.bind("<Leave>",
+                           lambda e: self._on_cal_day_leave(e))
+
+    def _on_cal_day_enter(self, event, cell_date):
+        if cell_date == self._cal_tooltip_date:
+            return                     # already showing this day
+        self._hide_cal_tooltip()
+        tasks_on_day = [
+            t for t in self.manager.tasks
+            if t.due_date and t.due_date == cell_date
+        ]
+        if not tasks_on_day:
+            return
+        self._cal_tooltip_date = cell_date
+        self._show_cal_tooltip(event, tasks_on_day)
+
+    def _on_cal_day_leave(self, event):
+        self._hide_cal_tooltip()
+
+    def _on_cal_hover(self, event):
+        pass   # kept so old bind("<Motion>") call is harmless
+
+    def _on_cal_leave(self, event):
+        self._hide_cal_tooltip()
+
+    def _show_cal_tooltip(self, event, tasks):
+        t = DARK_THEME if self.dark_mode else LIGHT_THEME
+        win = tk.Toplevel(self.root)
+        win.wm_overrideredirect(True)          # borderless
+        win.attributes("-topmost", True)
+        win.configure(bg=t["border"])          # 1px border via bg bleed
+
+        inner = tk.Frame(win, bg=t["surface2"], padx=10, pady=8)
+        inner.pack(padx=1, pady=1)             # 1px gap = border illusion
+
+        for i, task in enumerate(tasks):
+            if i > 0:
+                tk.Frame(inner, height=1, bg=t["border"]).pack(fill=tk.X, pady=4)
+
+            icon = {"High": "🔥", "Medium": "⚡", "Low": "🌿"}.get(task.priority, "•")
+            cat  = getattr(task, "category", "General")
+            done_prefix = "✅ " if task.done else ""
+
+            # Task name row
+            name_row = tk.Frame(inner, bg=t["surface2"])
+            name_row.pack(fill=tk.X)
+            tk.Label(
+                name_row,
+                text=f"{done_prefix}{icon}  {task.name}",
+                bg=t["surface2"], fg=t["fg"],
+                font=("TkDefaultFont", 9, "bold"),
+                anchor="w"
+            ).pack(side=tk.LEFT)
+
+            # Category badge
+            import categories as cat_module
+            bg_cat, fg_cat = cat_module.get_color(cat, self.categories, self.dark_mode)
+            tk.Label(
+                name_row,
+                text=f" {cat} ",
+                bg=bg_cat, fg=fg_cat,
+                font=("TkDefaultFont", 7, "bold"),
+                padx=3, pady=1
+            ).pack(side=tk.RIGHT, padx=(6, 0))
+
+            # Description (if any)
+            if task.description:
+                tk.Label(
+                    inner,
+                    text=task.description,
+                    bg=t["surface2"], fg=t["muted_fg"],
+                    font=("TkDefaultFont", 8),
+                    anchor="w", justify="left",
+                    wraplength=200
+                ).pack(fill=tk.X, pady=(2, 0))
+
+        # Give the window an off-screen position first, render it, then move it
+        win.geometry("+9999+9999")
+        win.update_idletasks()               # forces Tk to compute actual size
+
+        w = win.winfo_reqwidth()
+        h = win.winfo_reqheight()
+        sw = win.winfo_screenwidth()
+        sh = win.winfo_screenheight()
+
+        x = event.x_root + 14
+        y = event.y_root + 10
+        if x + w > sw:
+            x = event.x_root - w - 6
+        if y + h > sh:
+            y = event.y_root - h - 6
+
+        win.geometry(f"+{x}+{y}")
+        self._cal_tooltip_win = win
+
+    def _hide_cal_tooltip(self):
+        if self._cal_tooltip_win:
+            try:
+                self._cal_tooltip_win.destroy()
+            except Exception:
+                pass
+            self._cal_tooltip_win = None
+        self._cal_tooltip_date = None
 
     # ═══════════════════════════════════════════════
     #  HOVER
@@ -1145,7 +1300,7 @@ class TodoApp:
             category = getattr(t, "category", "General")
             row_id = self.task_tree.insert(
                 "", tk.END,
-                values=(checkbox, t.name, category, t.priority, due_str, days_info, t.description)
+                values=(checkbox, t.name, category, PRIORITY_ICONS.get(t.priority, t.priority), due_str, days_info, t.description)
             )
 
             if t.done:

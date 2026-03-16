@@ -348,7 +348,31 @@ Bug fixed:
 --- version 0.3.160 --- 14.03.2026
 Changes:
 - added the dashboard stats panel under the calendar
+
+Bug fixed:
+-
+
+
+--- version 0.3.161 --- 15.03.2026
+Changes:
 - added the Category to the Tasks
+
+Bug fixed:
+-
+
+
+--- version 0.3.163 --- 16.03.2026
+Changes:
+- priority icons (🔥 High / ⚡ Medium / 🌿 Low)
+- hoovering over a calendar day where the task is, window appear with name, description and category
+
+Bug fixed:
+-
+
+
+--- version 0.3.102 ---
+Changes:
+- 
 
 Bug fixed:
 -
