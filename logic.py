@@ -1,6 +1,4 @@
 """
-logic.py  —  Pure business logic extracted from app.py
-=======================================================
 No tkinter, no tkcalendar, no GUI imports whatsoever.
 Import this from both app.py and test_todo.py.
 """
@@ -89,7 +87,7 @@ def get_sorted_tasks(tasks, sort_by, reverse=False):
 # ── Internal helpers ────────────────────────────────────────────────────────
 
 def _as_date(value):
-    """Coerce a str | date | None to a date object (or None)."""
+    # Coerce a str | date | None to a date object (or None).
     if value is None:
         return None
     if isinstance(value, date):

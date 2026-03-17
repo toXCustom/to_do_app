@@ -13,7 +13,6 @@ class Task:
 
     def update_status(self):
         if self.due_date:
-            # self.due_date is already a datetime.date object
             self.is_overdue = datetime.now().date() > self.due_date
         else:
             self.is_overdue = False

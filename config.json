@@ -2,7 +2,7 @@
     "dark_mode": true,
     "sort": "alphabetical",
     "filter": "All",
-    "geometry": "1209x673+563+296",
+    "geometry": "1424x948+434+167",
     "categories": [
         "General",
         "Work",
@@ -10,5 +10,6 @@
         "Shopping",
         "Health",
         "Finance"
-    ]
+    ],
+    "minimize_to_tray": false
 }

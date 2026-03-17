@@ -370,7 +370,20 @@ Bug fixed:
 -
 
 
---- version 0.3.102 ---
+--- version 0.3.169 --- 17.03.2026
+Changes:
+- added Try Icon - not exiting closing the window
+- added the Settings Button
+- in Settings - manage the Light / Dark Mode
+- in Settings - manage the Categories
+- in Settings - manage if the X will close the application or stay in Tray
+- removed the Light / Dark Mode button
+
+Bug fixed:
+-
+
+
+--- version 0.3.102 --- 18.03.2026
 Changes:
 - 
 
@@ -378,7 +391,7 @@ Bug fixed:
 -
 
 
---- version 0.3.102 ---
+--- version 0.3.102 --- 19.03.2026
 Changes:
 - 
 
@@ -386,7 +399,31 @@ Bug fixed:
 -
 
 
---- version 0.3.102 ---
+--- version 0.3.102 --- 20.03.2026
+Changes:
+- 
+
+Bug fixed:
+-
+
+
+--- version 0.3.102 --- 21.03.2026
+Changes:
+- 
+
+Bug fixed:
+-
+
+
+--- version 0.3.102 --- 22.03.2026
+Changes:
+- 
+
+Bug fixed:
+-
+
+
+--- version 0.3.102 --- 23.03.2026
 Changes:
 - 
 

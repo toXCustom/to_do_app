@@ -8,6 +8,14 @@ from tkcalendar import Calendar
 import logic
 import categories as cat_module
 
+# pystray — optional system tray support
+try:
+    import pystray
+    from PIL import Image, ImageDraw
+    TRAY_AVAILABLE = True
+except ImportError:
+    TRAY_AVAILABLE = False
+
 PRIORITY_ICONS = {"High": "🔥 High", "Medium": "⚡ Medium", "Low": "🌿 Low"}
 
 # ---------- Theme Constants ----------
@@ -54,7 +62,8 @@ class TodoApp:
         # Restore last window size/position, or use the default
         config = load_config()
         self.root.geometry(config.get("geometry", "900x620"))
-        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.root.protocol("WM_DELETE_WINDOW", self._on_window_close)
+        self._tray_icon = None
 
         # Task manager
         self.manager = TaskManager()
@@ -63,6 +72,7 @@ class TodoApp:
         # State
         config = load_config()
         self.dark_mode = config.get("dark_mode", False)
+        self.minimize_to_tray = config.get("minimize_to_tray", True)
         self.sort_type = tk.StringVar(value=config.get("sort", "due_date"))
         self.sort_reverse = False          # ascending by default
         self.filter_type = tk.StringVar(value=config.get("filter", "All"))
@@ -77,6 +87,7 @@ class TodoApp:
         self.refresh_tasks()
         self.auto_save()
         self.root.after(100, self._bind_cal_day_tooltips)  # after widgets fully rendered
+        self.root.after(300, self._start_tray)
 
     # ═══════════════════════════════════════════════
     #  UI BUILD
@@ -225,14 +236,14 @@ class TodoApp:
         )
         self.save_label.pack(side=tk.LEFT, padx=(0, 14))
 
-        self.theme_button = tk.Button(
-            self.right_frame, text="🌙  Dark",
-            command=self.toggle_theme,
+        self.settings_btn = tk.Button(
+            self.right_frame, text="⚙  Settings",
+            command=self.open_settings_gui,
             relief="flat", cursor="hand2",
             font=("TkDefaultFont", 10),
             padx=11, pady=5
         )
-        self.theme_button.pack(side=tk.LEFT)
+        self.settings_btn.pack(side=tk.LEFT)
 
         # ── Main content: sidebar + task list side by side ──
         self.content_frame = tk.Frame(self.root)
@@ -343,13 +354,7 @@ class TodoApp:
         )
         self.cat_heading.pack(side=tk.LEFT)
 
-        self.manage_cat_btn = tk.Button(
-            cat_header_row, text="＋ Manage",
-            relief="flat", cursor="hand2",
-            font=("TkDefaultFont", 8),
-            command=self._manage_categories_gui
-        )
-        self.manage_cat_btn.pack(side=tk.RIGHT)
+
 
         self.cat_filter_frame = tk.Frame(self.sidebar)
         self.cat_filter_frame.pack(fill=tk.X, padx=8, pady=(0, 8))
@@ -579,10 +584,7 @@ class TodoApp:
         self.cat_heading.configure(bg=t["bg"], fg=t["muted_fg"])
         cat_header_row = self.cat_heading.master
         cat_header_row.configure(bg=t["bg"])
-        self.manage_cat_btn.configure(
-            bg=t["bg"], fg=t["accent"],
-            activebackground=t["bg"], activeforeground=t["accent_hover"]
-        )
+
         self.cat_filter_frame.configure(bg=t["bg"])
         self._build_category_filter_buttons()
 
@@ -598,13 +600,12 @@ class TodoApp:
             self._bind_hover(btn, lambda: False,
                              rest_bg=t["secondary_btn_bg"], hover_bg=t["border"])
         self.save_label.configure(bg=t["bg"], fg=t["muted_fg"])
-        self.theme_button.configure(
+        self.settings_btn.configure(
             bg=t["surface2"], fg=t["muted_fg"],
             activebackground=t["border"],
             activeforeground=t["fg"],
-            text="☀  Light" if self.dark_mode else "🌙  Dark"
         )
-        self._bind_hover(self.theme_button, lambda: False,
+        self._bind_hover(self.settings_btn, lambda: False,
                          rest_bg=t["surface2"], hover_bg=t["border"])
 
         # Treeview
@@ -662,7 +663,8 @@ class TodoApp:
             "sort":       self.sort_type.get(),
             "filter":     self.filter_type.get(),
             "geometry":   self.root.geometry(),
-            "categories": self.categories,
+            "categories":        self.categories,
+            "minimize_to_tray": self.minimize_to_tray,
         })
 
     # ═══════════════════════════════════════════════
@@ -723,6 +725,157 @@ class TodoApp:
                 all_btn.configure(bg=t["accent"], fg=t["accent_fg"])
             else:
                 all_btn.configure(bg=t["surface2"], fg=t["muted_fg"])
+
+    def open_settings_gui(self):
+        """Full Settings dialog with tabbed sections."""
+        top = self._make_dialog("Settings")
+        top.geometry("460x660")
+        top.resizable(False, False)
+        t = DARK_THEME if self.dark_mode else LIGHT_THEME
+
+        # ── Header ────────────────────────────────────────
+        hdr = tk.Frame(top, bg=t["surface"])
+        hdr.pack(fill=tk.X)
+        tk.Label(hdr, text="⚙  Settings", font=("Georgia", 14, "bold"),
+                 bg=t["surface"], fg=t["fg"]).pack(anchor="w", padx=18, pady=(14, 12))
+
+        tk.Frame(top, height=1, bg=t["border"]).pack(fill=tk.X)
+
+        # ── Scrollable body ───────────────────────────────
+        body = tk.Frame(top, bg=t["bg"])
+        body.pack(fill=tk.BOTH, expand=True, padx=18, pady=12)
+
+        def section(parent, title):
+            """Render a section heading."""
+            tk.Label(parent, text=title, font=("TkDefaultFont", 9, "bold"),
+                     bg=t["bg"], fg=t["muted_fg"]).pack(anchor="w", pady=(14, 4))
+            tk.Frame(parent, height=1, bg=t["border"]).pack(fill=tk.X, pady=(0, 8))
+
+        def row(parent, label_text, widget_fn):
+            """Label on left, widget on right."""
+            r = tk.Frame(parent, bg=t["bg"])
+            r.pack(fill=tk.X, pady=4)
+            tk.Label(r, text=label_text, bg=t["bg"], fg=t["fg"],
+                     font=("TkDefaultFont", 10), anchor="w").pack(side=tk.LEFT)
+            widget_fn(r)
+            return r
+
+        # ══ APPEARANCE ════════════════════════════════════
+        section(body, "APPEARANCE")
+
+        # Dark mode toggle
+        dark_var = tk.BooleanVar(value=self.dark_mode)
+        def toggle_dark():
+            self.dark_mode = dark_var.get()
+            self.save_ui_config()
+            self.apply_theme()
+            # Re-colour this dialog too
+            _retheme()
+
+        def row_dark(parent):
+            chk = tk.Checkbutton(parent, variable=dark_var, command=toggle_dark,
+                                 bg=t["bg"], fg=t["fg"],
+                                 activebackground=t["bg"],
+                                 selectcolor=t["surface2"],
+                                 relief="flat", cursor="hand2")
+            chk.pack(side=tk.RIGHT)
+        row(body, "Dark mode", row_dark)
+
+        # ══ BEHAVIOUR ═════════════════════════════════════
+        section(body, "BEHAVIOUR")
+
+        tray_var = tk.BooleanVar(value=self.minimize_to_tray)
+        tray_note = "(requires pystray)" if not TRAY_AVAILABLE else ""
+        def toggle_tray():
+            self.minimize_to_tray = tray_var.get()
+            self.save_ui_config()
+
+        def row_tray(parent):
+            chk = tk.Checkbutton(parent, variable=tray_var, command=toggle_tray,
+                                 bg=t["bg"], fg=t["fg"],
+                                 activebackground=t["bg"],
+                                 selectcolor=t["surface2"],
+                                 relief="flat", cursor="hand2",
+                                 state="normal" if TRAY_AVAILABLE else "disabled")
+            chk.pack(side=tk.RIGHT)
+        row(body, f"Minimise to tray on close  {tray_note}", row_tray)
+
+        # ══ CATEGORIES ════════════════════════════════════
+        section(body, "CATEGORIES")
+
+        cat_outer = tk.Frame(body, bg=t["bg"])
+        cat_outer.pack(fill=tk.X)
+
+        # Scrollable list of categories
+        list_frame = tk.Frame(cat_outer, bg=t["surface2"],
+                              highlightthickness=1,
+                              highlightbackground=t["border"])
+        list_frame.pack(fill=tk.X, pady=(0, 8))
+
+        def rebuild_cat_list():
+            for w in list_frame.winfo_children():
+                w.destroy()
+            for cat in self.categories:
+                r = tk.Frame(list_frame, bg=t["surface2"])
+                r.pack(fill=tk.X, padx=6, pady=3)
+                import categories as _cm
+                bg_c, fg_c = _cm.get_color(cat, self.categories, self.dark_mode)
+                tk.Label(r, text=cat, bg=bg_c, fg=fg_c,
+                         font=("TkDefaultFont", 9, "bold"),
+                         padx=8, pady=2).pack(side=tk.LEFT)
+                if cat != "General":
+                    def _del(c=cat):
+                        self.categories.remove(c)
+                        for task in self.manager.tasks:
+                            if getattr(task, "category", "General") == c:
+                                task.category = "General"
+                        self.save_ui_config()
+                        self._build_category_filter_buttons()
+                        self.refresh_tasks()
+                        rebuild_cat_list()
+                    tk.Button(r, text="✕", relief="flat", cursor="hand2",
+                              bg=t["surface2"], fg=t["muted_fg"],
+                              activebackground=t["surface2"],
+                              font=("TkDefaultFont", 8),
+                              command=_del).pack(side=tk.RIGHT)
+
+        rebuild_cat_list()
+
+        # Add new category
+        add_row = tk.Frame(cat_outer, bg=t["bg"])
+        add_row.pack(fill=tk.X)
+        new_cat_entry = self._entry(add_row, t, width=22)
+        new_cat_entry.pack(side=tk.LEFT, ipady=4, padx=(0, 6))
+
+        def add_category():
+            name = new_cat_entry.get().strip()
+            if not name or name in self.categories:
+                return
+            self.categories.append(name)
+            new_cat_entry.delete(0, tk.END)
+            self.save_ui_config()
+            self._build_category_filter_buttons()
+            rebuild_cat_list()
+
+        self._btn(add_row, t, "Add category", add_category, primary=True).pack(side=tk.LEFT)
+        new_cat_entry.bind("<Return>", lambda e: add_category())
+
+        # ── Footer ────────────────────────────────────────
+        tk.Frame(top, height=1, bg=t["border"]).pack(fill=tk.X, side=tk.BOTTOM)
+        foot = tk.Frame(top, bg=t["surface"], height=70)
+        foot.pack(fill=tk.X, side=tk.BOTTOM)
+        foot.pack_propagate(False)   # prevent children from shrinking the frame
+        tk.Button(
+            foot, text="Close", command=top.destroy,
+            relief="flat", cursor="hand2",
+            bg=t["accent"], fg=t["accent_fg"],
+            activebackground=t["accent_hover"], activeforeground=t["accent_fg"],
+            font=("TkDefaultFont", 13, "bold"),
+        ).place(x=18, y=10, relwidth=1.0, width=-36, height=50)
+
+        # ── Live re-theme helper (updates this dialog when dark mode toggles) ─
+        def _retheme():
+            pass  # dialog stays open; user sees main app theme change live
 
     def _manage_categories_gui(self):
         """Dialog to add/remove custom categories."""
@@ -1324,9 +1477,10 @@ class TodoApp:
             self.task_tree.heading(col, text=label,
                                    command=lambda c=col: self._sort_by_column(c))
 
-        # Sync calendar markers and dashboard stats
+        # Sync calendar markers, dashboard stats, and tray
         self.refresh_calendar()
         self.refresh_stats()
+        self.root.after(0, self._refresh_tray)
 
     def refresh_stats(self):
         """Recalculate all dashboard stat values and redraw the progress bar."""
@@ -1391,7 +1545,96 @@ class TodoApp:
         self.save_ui_config()   # persists geometry on every auto-save tick
         self.root.after(10000, self.auto_save)
 
+    # ═══════════════════════════════════════════════
+    #  SYSTEM TRAY
+    # ═══════════════════════════════════════════════
+
+    def _make_tray_image(self, size=64):
+        """Draw a simple checklist icon as the tray image."""
+        img  = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        t    = DARK_THEME if self.dark_mode else LIGHT_THEME
+
+        # Background circle
+        accent = t["accent"]
+        r, g, b = int(accent[1:3], 16), int(accent[3:5], 16), int(accent[5:7], 16)
+        draw.ellipse([2, 2, size - 2, size - 2], fill=(r, g, b, 255))
+
+        # Checkmark lines
+        s = size / 64
+        draw.line([(18*s, 34*s), (27*s, 44*s), (46*s, 20*s)],
+                  fill=(255, 255, 255, 255), width=max(1, int(6*s)))
+        return img
+
+    def _build_tray_menu(self):
+        """Build the right-click context menu shown on the tray icon."""
+        total   = len(self.manager.tasks)
+        done    = sum(1 for t in self.manager.tasks if t.done)
+        overdue = sum(1 for t in self.manager.tasks if t.is_overdue)
+        label   = f"{total - done} active  •  {overdue} overdue"
+
+        return pystray.Menu(
+            pystray.MenuItem(label,           None, enabled=False),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Show window",   self._tray_show),
+            pystray.MenuItem("Add task",      self._tray_add_task),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Quit",          self._tray_quit),
+        )
+
+    def _start_tray(self):
+        """Create and start the tray icon in a daemon thread."""
+        if not TRAY_AVAILABLE or self._tray_icon:
+            return
+        import threading
+        icon = pystray.Icon(
+            "MyTasks",
+            self._make_tray_image(),
+            "My Tasks",
+            menu=self._build_tray_menu(),
+        )
+        self._tray_icon = icon
+        threading.Thread(target=icon.run, daemon=True).start()
+
+    def _refresh_tray(self):
+        """Rebuild tray menu and icon after task changes."""
+        if not self._tray_icon:
+            return
+        self._tray_icon.menu  = self._build_tray_menu()
+        self._tray_icon.icon  = self._make_tray_image()
+        self._tray_icon.title = "My Tasks"
+
+    def _tray_show(self, icon=None, item=None):
+        """Restore the window from tray."""
+        self.root.after(0, self._show_window)
+
+    def _show_window(self):
+        self.root.deiconify()
+        self.root.lift()
+        self.root.focus_force()
+
+    def _tray_add_task(self, icon=None, item=None):
+        """Open Add Task dialog from the tray menu."""
+        self.root.after(0, lambda: (self._show_window(), self.add_task_gui()))
+
+    def _tray_quit(self, icon=None, item=None):
+        """Fully quit — save state, stop tray, destroy window."""
+        self.root.after(0, self.on_close)
+
+    def _on_window_close(self):
+        """Minimise to tray or quit depending on user preference."""
+        if TRAY_AVAILABLE and self._tray_icon and self.minimize_to_tray:
+            self.root.withdraw()
+            self._refresh_tray()
+        else:
+            self.on_close()
+
     def on_close(self):
+        if self._tray_icon:
+            try:
+                self._tray_icon.stop()
+            except Exception:
+                pass
         save_tasks(self.manager)
         self.save_ui_config()
         self.root.destroy()
