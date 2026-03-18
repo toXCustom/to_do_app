@@ -1,15 +1,28 @@
 {
     "dark_mode": true,
-    "sort": "alphabetical",
-    "filter": "All",
-    "geometry": "1424x948+434+167",
+    "sort": "due_date",
+    "filter": "Active",
+    "geometry": "1475x973+431+151",
     "categories": [
         "General",
         "Work",
         "Personal",
         "Shopping",
         "Health",
-        "Finance"
+        "Finance",
+        "Car"
     ],
+    "category_colors": {
+        "Car": {
+            "light": [
+                "#00ff80",
+                "#1C1917"
+            ],
+            "dark": [
+                "#007239",
+                "#00ffd9"
+            ]
+        }
+    },
     "minimize_to_tray": false
 }

@@ -7,6 +7,11 @@ from datetime import datetime
 from tkcalendar import Calendar
 import logic
 import categories as cat_module
+from categories import auto_fg
+from commands import (
+    CommandHistory, AddTaskCommand, DeleteTaskCommand,
+    EditTaskCommand, MarkDoneCommand, ToggleDoneCommand, snapshot
+)
 
 # pystray — optional system tray support
 try:
@@ -77,12 +82,35 @@ class TodoApp:
         self.sort_reverse = False          # ascending by default
         self.filter_type = tk.StringVar(value=config.get("filter", "All"))
         self._calendar_date_filter = None  # set when user clicks a calendar day
-        self.categories = cat_module.load_categories(config)
+        self.categories      = cat_module.load_categories(config)
+        self.category_colors = cat_module.load_category_colors(config)
         self._category_filter = None       # None = show all categories
+        self.history = CommandHistory()
         self.search_var = tk.StringVar()
         self.search_var.trace_add("write", lambda *args: self.refresh_tasks())
 
         self._build_ui()
+        # ── Keyboard shortcuts ──────────────────────────
+        kb = self.root.bind_all
+        # Task actions
+        kb("<Control-n>",        lambda e: self.add_task_gui())
+        kb("<Control-e>",        lambda e: self.edit_task_gui())
+        kb("<Delete>",           lambda e: self._shortcut_delete())
+        kb("<Control-d>",        lambda e: self.mark_done_gui())
+        # Undo / Redo
+        kb("<Control-z>",        lambda e: self.undo_action())
+        kb("<Control-y>",        lambda e: self.redo_action())
+        kb("<Control-Z>",        lambda e: self.redo_action())   # Ctrl+Shift+Z
+        # Navigation
+        kb("<Control-f>",        lambda e: self._focus_search())
+        kb("<Escape>",           lambda e: self._shortcut_escape())
+        kb("<Control-Home>",     lambda e: self._select_first_task())
+        kb("<Control-End>",      lambda e: self._select_last_task())
+        # View
+        kb("<Control-t>",        lambda e: self.toggle_theme())
+        kb("<Control-comma>",    lambda e: self.open_settings_gui())
+        # Help
+        kb("<question>",         lambda e: self._show_shortcuts_help())
         self.apply_theme()
         self.refresh_tasks()
         self.auto_save()
@@ -211,6 +239,29 @@ class TodoApp:
         self.action_frame = tk.Frame(self.footer_frame)
         self.action_frame.pack(side=tk.LEFT)
 
+        # Undo / Redo buttons
+        self.undo_btn = tk.Button(
+            self.action_frame, text="↩  Undo",
+            command=self.undo_action,
+            relief="flat", cursor="hand2",
+            font=("TkDefaultFont", 10),
+            padx=11, pady=5
+        )
+        self.undo_btn.pack(side=tk.LEFT, padx=(0, 3))
+
+        self.redo_btn = tk.Button(
+            self.action_frame, text="↪  Redo",
+            command=self.redo_action,
+            relief="flat", cursor="hand2",
+            font=("TkDefaultFont", 10),
+            padx=11, pady=5
+        )
+        self.redo_btn.pack(side=tk.LEFT, padx=(0, 10))
+
+        # Divider between undo/redo and task actions
+        self.undo_divider = tk.Frame(self.action_frame, width=1)
+        self.undo_divider.pack(side=tk.LEFT, fill=tk.Y, pady=4, padx=(0, 10))
+
         self.action_buttons = []
         for label, cmd in [
             ("✎  Edit",       self.edit_task_gui),
@@ -230,11 +281,27 @@ class TodoApp:
         self.right_frame = tk.Frame(self.footer_frame)
         self.right_frame.pack(side=tk.RIGHT)
 
+        self.save_dot = tk.Label(
+            self.right_frame, text="●",
+            font=("TkDefaultFont", 10),
+            fg="#4ADE80"   # always green — dot colour doesn't change with theme
+        )
+        self.save_dot.pack(side=tk.LEFT, padx=(0, 4))
+
         self.save_label = tk.Label(
-            self.right_frame, text="● Auto-save on",
+            self.right_frame, text="Auto-save on",
             font=("TkDefaultFont", 10)
         )
         self.save_label.pack(side=tk.LEFT, padx=(0, 14))
+
+        self.help_btn = tk.Button(
+            self.right_frame, text="?",
+            command=self._show_shortcuts_help,
+            relief="flat", cursor="hand2",
+            font=("TkDefaultFont", 10, "bold"),
+            width=2, padx=6, pady=5
+        )
+        self.help_btn.pack(side=tk.LEFT, padx=(0, 6))
 
         self.settings_btn = tk.Button(
             self.right_frame, text="⚙  Settings",
@@ -591,7 +658,8 @@ class TodoApp:
         # Footer
         for w in [self.footer_frame, self.action_frame, self.right_frame]:
             w.configure(bg=t["bg"])
-        for btn in self.action_buttons:
+        self.undo_divider.configure(bg=t["border"])
+        for btn in [self.undo_btn, self.redo_btn] + self.action_buttons:
             btn.configure(
                 bg=t["secondary_btn_bg"], fg=t["secondary_btn_fg"],
                 activebackground=t["border"],
@@ -599,7 +667,15 @@ class TodoApp:
             )
             self._bind_hover(btn, lambda: False,
                              rest_bg=t["secondary_btn_bg"], hover_bg=t["border"])
+        self._update_undo_redo_buttons()
+        self.save_dot.configure(bg=t["bg"])
         self.save_label.configure(bg=t["bg"], fg=t["muted_fg"])
+        self.help_btn.configure(
+            bg=t["surface2"], fg=t["accent"],
+            activebackground=t["border"], activeforeground=t["accent"]
+        )
+        self._bind_hover(self.help_btn, lambda: False,
+                         rest_bg=t["surface2"], hover_bg=t["border"])
         self.settings_btn.configure(
             bg=t["surface2"], fg=t["muted_fg"],
             activebackground=t["border"],
@@ -664,7 +740,8 @@ class TodoApp:
             "filter":     self.filter_type.get(),
             "geometry":   self.root.geometry(),
             "categories":        self.categories,
-            "minimize_to_tray": self.minimize_to_tray,
+            "category_colors":   self.category_colors,
+            "minimize_to_tray":  self.minimize_to_tray,
         })
 
     # ═══════════════════════════════════════════════
@@ -690,7 +767,7 @@ class TodoApp:
         self._cat_filter_buttons[None] = all_btn
 
         for cat in self.categories:
-            bg, fg = cat_module.get_color(cat, self.categories, self.dark_mode)
+            bg, fg = cat_module.get_color(cat, self.categories, self.dark_mode, self.category_colors)
             btn = tk.Button(
                 self.cat_filter_frame, text=cat,
                 relief="flat", cursor="hand2",
@@ -819,13 +896,14 @@ class TodoApp:
                 r = tk.Frame(list_frame, bg=t["surface2"])
                 r.pack(fill=tk.X, padx=6, pady=3)
                 import categories as _cm
-                bg_c, fg_c = _cm.get_color(cat, self.categories, self.dark_mode)
+                bg_c, fg_c = _cm.get_color(cat, self.categories, self.dark_mode, self.category_colors)
                 tk.Label(r, text=cat, bg=bg_c, fg=fg_c,
                          font=("TkDefaultFont", 9, "bold"),
                          padx=8, pady=2).pack(side=tk.LEFT)
                 if cat != "General":
                     def _del(c=cat):
                         self.categories.remove(c)
+                        self.category_colors.pop(c, None)   # remove custom colour
                         for task in self.manager.tasks:
                             if getattr(task, "category", "General") == c:
                                 task.category = "General"
@@ -841,23 +919,78 @@ class TodoApp:
 
         rebuild_cat_list()
 
-        # Add new category
+        # ── Add new category ──────────────────────────────
+        # State: chosen custom colour for the new category (None = use palette)
+        chosen_color = {"light": None, "dark": None}  # mutable dict for closure
+
         add_row = tk.Frame(cat_outer, bg=t["bg"])
-        add_row.pack(fill=tk.X)
-        new_cat_entry = self._entry(add_row, t, width=22)
+        add_row.pack(fill=tk.X, pady=(4, 0))
+
+        new_cat_entry = self._entry(add_row, t, width=16)
         new_cat_entry.pack(side=tk.LEFT, ipady=4, padx=(0, 6))
+
+        # Colour swatch button — shows chosen colour, opens picker on click
+        DEFAULT_SWATCH = t["surface2"]
+        swatch_btn = tk.Button(
+            add_row, text="  🎨  ", relief="flat", cursor="hand2",
+            bg=DEFAULT_SWATCH, fg=t["fg"],
+            activebackground=t["border"],
+            font=("TkDefaultFont", 10),
+            padx=4, pady=4
+        )
+        swatch_btn.pack(side=tk.LEFT, padx=(0, 6))
+
+        def pick_color():
+            from tkinter.colorchooser import askcolor
+            # Start from current swatch colour or a default
+            init = chosen_color["light"] or t["accent"]
+            result = askcolor(color=init, title="Pick category colour", parent=top)
+            if result and result[1]:
+                bg_light = result[1]          # e.g. "#a855f7"
+                fg_light = auto_fg(bg_light)
+                # Derive a darker shade for dark mode (reduce brightness ~40%)
+                r = int(bg_light[1:3], 16)
+                g = int(bg_light[3:5], 16)
+                b = int(bg_light[5:7], 16)
+                bg_dark = "#{:02x}{:02x}{:02x}".format(
+                    max(0, int(r * 0.45)),
+                    max(0, int(g * 0.45)),
+                    max(0, int(b * 0.45)),
+                )
+                fg_dark = "#{:02x}{:02x}{:02x}".format(
+                    min(255, int(r * 1.7)),
+                    min(255, int(g * 1.7)),
+                    min(255, int(b * 1.7)),
+                )
+                chosen_color["light"] = (bg_light, fg_light)
+                chosen_color["dark"]  = (bg_dark,  fg_dark)
+                swatch_btn.configure(bg=bg_light, fg=fg_light,
+                                     activebackground=bg_light)
+
+        swatch_btn.configure(command=pick_color)
 
         def add_category():
             name = new_cat_entry.get().strip()
             if not name or name in self.categories:
                 return
             self.categories.append(name)
+            # Store custom colour if one was picked
+            if chosen_color["light"]:
+                self.category_colors[name] = {
+                    "light": chosen_color["light"],
+                    "dark":  chosen_color["dark"],
+                }
+                # Reset for next use
+                chosen_color["light"] = None
+                chosen_color["dark"]  = None
+                swatch_btn.configure(bg=DEFAULT_SWATCH, fg=t["fg"],
+                                     activebackground=t["border"])
             new_cat_entry.delete(0, tk.END)
             self.save_ui_config()
             self._build_category_filter_buttons()
             rebuild_cat_list()
 
-        self._btn(add_row, t, "Add category", add_category, primary=True).pack(side=tk.LEFT)
+        self._btn(add_row, t, "Add", add_category, primary=True).pack(side=tk.LEFT)
         new_cat_entry.bind("<Return>", lambda e: add_category())
 
         # ── Footer ────────────────────────────────────────
@@ -894,7 +1027,7 @@ class TodoApp:
             for cat in self.categories:
                 row = tk.Frame(list_frame, bg=t["surface2"])
                 row.pack(fill=tk.X, padx=6, pady=2)
-                bg, fg = cat_module.get_color(cat, self.categories, self.dark_mode)
+                bg, fg = cat_module.get_color(cat, self.categories, self.dark_mode, self.category_colors)
                 tk.Label(row, text=cat, bg=bg, fg=fg,
                          font=("TkDefaultFont", 9, "bold"),
                          padx=8, pady=2).pack(side=tk.LEFT)
@@ -947,40 +1080,50 @@ class TodoApp:
         top = self._make_dialog("Add Task")
         t = DARK_THEME if self.dark_mode else LIGHT_THEME
 
-        tk.Label(top, text="Task Name:", **self._lbl(t)).grid(row=0, column=0, sticky="e", padx=10, pady=8)
-        name_entry = self._entry(top, t, width=38)
+        # Footer MUST be packed before the form frame (pack reserves bottom space first)
+        tk.Frame(top, height=1, bg=t["border"]).pack(side=tk.BOTTOM, fill=tk.X)
+        foot_add = tk.Frame(top, bg=t["surface"], height=64)
+        foot_add.pack(side=tk.BOTTOM, fill=tk.X)
+        foot_add.pack_propagate(False)
+
+        # Form in its own frame so grid and pack don't conflict on `top`
+        form = tk.Frame(top, bg=t["bg"])
+        form.pack(fill=tk.BOTH, expand=True)
+
+        tk.Label(form, text="Task Name:", **self._lbl(t)).grid(row=0, column=0, sticky="e", padx=10, pady=8)
+        name_entry = self._entry(form, t, width=38)
         name_entry.grid(row=0, column=1, padx=10, pady=8)
         name_entry.focus_set()
 
-        tk.Label(top, text="Description:", **self._lbl(t)).grid(row=1, column=0, sticky="e", padx=10, pady=8)
-        desc_entry = self._entry(top, t, width=38)
+        tk.Label(form, text="Description:", **self._lbl(t)).grid(row=1, column=0, sticky="e", padx=10, pady=8)
+        desc_entry = self._entry(form, t, width=38)
         desc_entry.grid(row=1, column=1, padx=10, pady=8)
 
-        tk.Label(top, text="Category:", **self._lbl(t)).grid(row=2, column=0, sticky="e", padx=10, pady=8)
+        tk.Label(form, text="Category:", **self._lbl(t)).grid(row=2, column=0, sticky="e", padx=10, pady=8)
         cat_var = tk.StringVar(value=self._category_filter or "General")
-        cat_menu = tk.OptionMenu(top, cat_var, *self.categories)
+        cat_menu = tk.OptionMenu(form, cat_var, *self.categories)
         cat_menu.configure(bg=t["surface2"], fg=t["fg"], activebackground=t["border"], relief="flat")
         cat_menu.grid(row=2, column=1, sticky="w", padx=10, pady=8)
 
-        tk.Label(top, text="Priority:", **self._lbl(t)).grid(row=3, column=0, sticky="e", padx=10, pady=8)
+        tk.Label(form, text="Priority:", **self._lbl(t)).grid(row=3, column=0, sticky="e", padx=10, pady=8)
         priority_var = tk.StringVar(value="⚡ Medium")
-        priority_menu = tk.OptionMenu(top, priority_var, "🔥 High", "⚡ Medium", "🌿 Low")
+        priority_menu = tk.OptionMenu(form, priority_var, "🔥 High", "⚡ Medium", "🌿 Low")
         priority_menu.configure(bg=t["surface2"], fg=t["fg"], activebackground=t["border"], relief="flat")
         priority_menu.grid(row=3, column=1, sticky="w", padx=10, pady=8)
 
-        tk.Label(top, text="Due Date:", **self._lbl(t)).grid(row=4, column=0, sticky="ne", padx=10, pady=8)
+        tk.Label(form, text="Due Date:", **self._lbl(t)).grid(row=4, column=0, sticky="ne", padx=10, pady=8)
         due_var = tk.StringVar()
-        cal = Calendar(top, selectmode="day", date_pattern="yyyy-mm-dd")
+        cal = Calendar(form, selectmode="day", date_pattern="yyyy-mm-dd")
         cal.grid(row=4, column=1, padx=10, pady=8)
 
-        due_lbl = tk.Label(top, text="No date selected", font=("TkDefaultFont", 10), bg=t["bg"], fg=t["muted_fg"])
+        due_lbl = tk.Label(form, text="No date selected", font=("TkDefaultFont", 10), bg=t["bg"], fg=t["muted_fg"])
         due_lbl.grid(row=5, column=1, sticky="w", padx=10)
 
         def select_due():
             due_var.set(cal.get_date())
             due_lbl.configure(text=f"Selected: {due_var.get()}")
 
-        self._btn(top, t, "Select Date", select_due).grid(row=5, column=0, sticky="e", padx=10, pady=4)
+        self._btn(form, t, "Select Date", select_due).grid(row=5, column=0, sticky="e", padx=10, pady=4)
 
         def confirm():
             name = name_entry.get().strip()
@@ -991,19 +1134,30 @@ class TodoApp:
                 name,
                 desc_entry.get().strip(),
                 due_var.get() or None,
-                priority_var.get().split()[-1]  # strip icon prefix
+                priority_var.get().split()[-1]
             )
             if task:
                 task.category = cat_var.get()
-            else:
-                # Fallback: set on last added task
-                if self.manager.tasks:
-                    self.manager.tasks[-1].category = cat_var.get()
+            elif self.manager.tasks:
+                task = self.manager.tasks[-1]
+                task.category = cat_var.get()
+            if task and task in self.manager.tasks:
+                self.manager.tasks.remove(task)
+            if task:
+                cmd = AddTaskCommand(self.manager, task)
+                self.history.execute(cmd)
             self.refresh_tasks()
+            self._update_undo_redo_buttons()
             save_tasks(self.manager)
             top.destroy()
 
-        self._btn(top, t, "Add Task", confirm, primary=True).grid(row=6, column=0, columnspan=2, pady=14)
+        tk.Button(
+            foot_add, text="✚  Add Task", command=confirm,
+            relief="flat", cursor="hand2",
+            bg=t["accent"], fg=t["accent_fg"],
+            activebackground=t["accent_hover"], activeforeground=t["accent_fg"],
+            font=("TkDefaultFont", 12, "bold"),
+        ).place(x=14, y=10, relwidth=1.0, width=-28, height=44)
 
     def edit_task_gui(self):
         selected_item = self.task_tree.selection()
@@ -1017,33 +1171,43 @@ class TodoApp:
         top = self._make_dialog("Edit Task")
         t = DARK_THEME if self.dark_mode else LIGHT_THEME
 
-        tk.Label(top, text="Task Name:", **self._lbl(t)).grid(row=0, column=0, sticky="e", padx=10, pady=8)
-        name_entry = self._entry(top, t, width=38)
+        # Footer MUST be packed before the form frame (pack reserves bottom space first)
+        tk.Frame(top, height=1, bg=t["border"]).pack(side=tk.BOTTOM, fill=tk.X)
+        foot = tk.Frame(top, bg=t["surface"], height=64)
+        foot.pack(side=tk.BOTTOM, fill=tk.X)
+        foot.pack_propagate(False)
+
+        # Form in its own frame so grid and pack don't conflict on `top`
+        form = tk.Frame(top, bg=t["bg"])
+        form.pack(fill=tk.BOTH, expand=True)
+
+        tk.Label(form, text="Task Name:", **self._lbl(t)).grid(row=0, column=0, sticky="e", padx=10, pady=8)
+        name_entry = self._entry(form, t, width=38)
         name_entry.insert(0, task_to_edit.name)
         name_entry.grid(row=0, column=1, padx=10, pady=8)
 
-        tk.Label(top, text="Description:", **self._lbl(t)).grid(row=1, column=0, sticky="e", padx=10, pady=8)
-        desc_entry = self._entry(top, t, width=38)
+        tk.Label(form, text="Description:", **self._lbl(t)).grid(row=1, column=0, sticky="e", padx=10, pady=8)
+        desc_entry = self._entry(form, t, width=38)
         desc_entry.insert(0, task_to_edit.description)
         desc_entry.grid(row=1, column=1, padx=10, pady=8)
 
-        tk.Label(top, text="Category:", **self._lbl(t)).grid(row=2, column=0, sticky="e", padx=10, pady=8)
+        tk.Label(form, text="Category:", **self._lbl(t)).grid(row=2, column=0, sticky="e", padx=10, pady=8)
         current_cat = getattr(task_to_edit, "category", "General")
         cat_var = tk.StringVar(value=current_cat)
-        cat_menu = tk.OptionMenu(top, cat_var, *self.categories)
+        cat_menu = tk.OptionMenu(form, cat_var, *self.categories)
         cat_menu.configure(bg=t["surface2"], fg=t["fg"], activebackground=t["border"], relief="flat")
         cat_menu.grid(row=2, column=1, sticky="w", padx=10, pady=8)
 
-        tk.Label(top, text="Priority:", **self._lbl(t)).grid(row=3, column=0, sticky="e", padx=10, pady=8)
+        tk.Label(form, text="Priority:", **self._lbl(t)).grid(row=3, column=0, sticky="e", padx=10, pady=8)
         priority_var = tk.StringVar(value=PRIORITY_ICONS.get(task_to_edit.priority, task_to_edit.priority))
-        priority_menu = tk.OptionMenu(top, priority_var, "🔥 High", "⚡ Medium", "🌿 Low")
+        priority_menu = tk.OptionMenu(form, priority_var, "🔥 High", "⚡ Medium", "🌿 Low")
         priority_menu.configure(bg=t["surface2"], fg=t["fg"], activebackground=t["border"], relief="flat")
         priority_menu.grid(row=3, column=1, sticky="w", padx=10, pady=8)
 
-        tk.Label(top, text="Due Date:", **self._lbl(t)).grid(row=4, column=0, sticky="ne", padx=10, pady=8)
+        tk.Label(form, text="Due Date:", **self._lbl(t)).grid(row=4, column=0, sticky="ne", padx=10, pady=8)
         init_date = task_to_edit.due_date if task_to_edit.due_date else datetime.now().date()
         cal = Calendar(
-            top, selectmode="day",
+            form, selectmode="day",
             year=init_date.year, month=init_date.month, day=init_date.day,
             date_pattern="yyyy-mm-dd"
         )
@@ -1051,7 +1215,7 @@ class TodoApp:
 
         due_var = tk.StringVar(value=task_to_edit.due_date.strftime("%Y-%m-%d") if task_to_edit.due_date else "")
         due_lbl = tk.Label(
-            top,
+            form,
             text=f"Selected: {due_var.get()}" if due_var.get() else "No date selected",
             font=("TkDefaultFont", 10), bg=t["bg"], fg=t["muted_fg"]
         )
@@ -1061,22 +1225,35 @@ class TodoApp:
             due_var.set(cal.get_date())
             due_lbl.configure(text=f"Selected: {due_var.get()}")
 
-        self._btn(top, t, "Select Date", select_due).grid(row=5, column=0, sticky="e", padx=10, pady=4)
+        self._btn(form, t, "Select Date", select_due).grid(row=5, column=0, sticky="e", padx=10, pady=4)
+
+        before_snap = snapshot(task_to_edit)
 
         def confirm():
             new_due_str = cal.get_date()
-            task_to_edit.name = name_entry.get().strip()
-            task_to_edit.description = desc_entry.get().strip()
-            task_to_edit.category = cat_var.get()
-            raw = priority_var.get().split()[-1]  # "🔥 High" → "High"
-            task_to_edit.priority = raw
-            task_to_edit.due_date = datetime.strptime(new_due_str, "%Y-%m-%d").date() if new_due_str else None
+            after_snap = {
+                "name":        name_entry.get().strip(),
+                "description": desc_entry.get().strip(),
+                "category":    cat_var.get(),
+                "priority":    priority_var.get().split()[-1],
+                "due_date":    datetime.strptime(new_due_str, "%Y-%m-%d").date() if new_due_str else None,
+                "done":        task_to_edit.done,
+            }
+            cmd = EditTaskCommand(task_to_edit, before_snap, after_snap)
+            self.history.execute(cmd)
             task_to_edit.update_status()
             self.refresh_tasks()
+            self._update_undo_redo_buttons()
             save_tasks(self.manager)
             top.destroy()
 
-        self._btn(top, t, "Save Changes", confirm, primary=True).grid(row=6, column=0, columnspan=2, pady=14)
+        tk.Button(
+            foot, text="💾  Save Changes", command=confirm,
+            relief="flat", cursor="hand2",
+            bg=t["accent"], fg=t["accent_fg"],
+            activebackground=t["accent_hover"], activeforeground=t["accent_fg"],
+            font=("TkDefaultFont", 12, "bold"),
+        ).place(x=14, y=10, relwidth=1.0, width=-28, height=44)
         self.root.wait_window(top)
 
     def delete_task_gui(self):
@@ -1085,8 +1262,10 @@ class TodoApp:
             return
         task = self.get_task_from_selection(selected[0])
         if task:
-            self.manager.tasks.remove(task)
+            cmd = DeleteTaskCommand(self.manager, task)
+            self.history.execute(cmd)
             self.refresh_tasks()
+            self._update_undo_redo_buttons()
             save_tasks(self.manager)
 
     def mark_done_gui(self):
@@ -1096,9 +1275,10 @@ class TodoApp:
             return
         task = self.get_task_from_selection(selected[0])
         if task:
-            task.done = True
-            task.update_status()
+            cmd = MarkDoneCommand(task, task.done)
+            self.history.execute(cmd)
             self.refresh_tasks()
+            self._update_undo_redo_buttons()
             save_tasks(self.manager)
 
     # ═══════════════════════════════════════════════
@@ -1308,7 +1488,7 @@ class TodoApp:
 
             # Category badge
             import categories as cat_module
-            bg_cat, fg_cat = cat_module.get_color(cat, self.categories, self.dark_mode)
+            bg_cat, fg_cat = cat_module.get_color(cat, self.categories, self.dark_mode, self.category_colors)
             tk.Label(
                 name_row,
                 text=f" {cat} ",
@@ -1392,9 +1572,10 @@ class TodoApp:
         if region == "cell" and col == "#1" and row_id:
             task = self.get_task_from_selection(row_id)
             if task:
-                task.done = not task.done
-                task.update_status()
+                cmd = ToggleDoneCommand(task)
+                self.history.execute(cmd)
                 self.refresh_tasks()
+                self._update_undo_redo_buttons()
                 save_tasks(self.manager)
             return "break"   # prevent default selection behaviour on this column
 
@@ -1539,6 +1720,177 @@ class TodoApp:
                 0, 0, int(w * pct / 100), 6,
                 fill=fill_color, outline="", width=0
             )
+
+    # ═══════════════════════════════════════════════
+    #  KEYBOARD SHORTCUT HELPERS
+    # ═══════════════════════════════════════════════
+
+    def _shortcut_delete(self):
+        """Delete only when the task tree has focus (not while typing)."""
+        focused = self.root.focus_get()
+        if focused == self.task_tree:
+            self.delete_task_gui()
+
+    def _shortcut_escape(self):
+        """Escape: clear search, then clear category/calendar filters."""
+        if self.search_var.get():
+            self.search_var.set("")
+            return
+        if self._category_filter:
+            self._set_category_filter(None)
+            return
+        if self._calendar_date_filter:
+            self._calendar_reset()
+
+    def _focus_search(self):
+        """Ctrl+F: focus the search box and select all."""
+        self.search_entry.focus_set()
+        self.search_entry.select_range(0, tk.END)
+
+    def _select_first_task(self):
+        children = self.task_tree.get_children()
+        if children:
+            self.task_tree.selection_set(children[0])
+            self.task_tree.focus(children[0])
+            self.task_tree.see(children[0])
+
+    def _select_last_task(self):
+        children = self.task_tree.get_children()
+        if children:
+            self.task_tree.selection_set(children[-1])
+            self.task_tree.focus(children[-1])
+            self.task_tree.see(children[-1])
+
+    def _show_shortcuts_help(self):
+        """Show a floating keyboard shortcuts reference card."""
+        # Don't open if a dialog is already showing shortcuts
+        for w in self.root.winfo_children():
+            if isinstance(w, tk.Toplevel) and getattr(w, "_is_shortcuts_help", False):
+                w.lift()
+                return
+
+        top = self._make_dialog("Keyboard Shortcuts")
+        top._is_shortcuts_help = True
+        top.resizable(False, False)
+        t = DARK_THEME if self.dark_mode else LIGHT_THEME
+
+        SHORTCUTS = [
+            ("TASKS", [
+                ("Ctrl + N",     "New task"),
+                ("Ctrl + E",     "Edit selected task"),
+                ("Delete",       "Delete selected task"),
+                ("Ctrl + D",     "Mark selected task done"),
+                ("Double-click", "Edit task"),
+            ]),
+            ("UNDO / REDO", [
+                ("Ctrl + Z",     "Undo"),
+                ("Ctrl + Y",     "Redo"),
+                ("Ctrl + Shift + Z", "Redo"),
+            ]),
+            ("NAVIGATION", [
+                ("Ctrl + F",     "Focus search box"),
+                ("Escape",       "Clear search / filters"),
+                ("Ctrl + Home",  "Select first task"),
+                ("Ctrl + End",   "Select last task"),
+            ]),
+            ("VIEW", [
+                ("Ctrl + T",     "Toggle dark / light mode"),
+                ("Ctrl + ,",     "Open Settings"),
+                ("?",            "Show this help"),
+            ]),
+        ]
+
+        # ── Header ────────────────────────────────────────
+        hdr = tk.Frame(top, bg=t["surface"])
+        hdr.pack(fill=tk.X)
+        tk.Label(hdr, text="⌨️  Keyboard Shortcuts",
+                 font=("Georgia", 13, "bold"),
+                 bg=t["surface"], fg=t["fg"]).pack(anchor="w", padx=18, pady=(14, 12))
+        tk.Frame(top, height=1, bg=t["border"]).pack(fill=tk.X)
+
+        body = tk.Frame(top, bg=t["bg"])
+        body.pack(fill=tk.BOTH, expand=True, padx=18, pady=12)
+
+        for section_title, rows in SHORTCUTS:
+            # Section heading
+            tk.Label(body, text=section_title,
+                     font=("TkDefaultFont", 8, "bold"),
+                     bg=t["bg"], fg=t["muted_fg"]).pack(anchor="w", pady=(12, 3))
+            tk.Frame(body, height=1, bg=t["border"]).pack(fill=tk.X, pady=(0, 6))
+
+            for keys, desc in rows:
+                row = tk.Frame(body, bg=t["bg"])
+                row.pack(fill=tk.X, pady=2)
+
+                # Key badge(s)
+                badge = tk.Label(
+                    row, text=keys,
+                    font=("TkDefaultFont", 9, "bold"),
+                    bg=t["surface2"], fg=t["fg"],
+                    padx=8, pady=3,
+                    relief="flat",
+                    highlightthickness=1,
+                    highlightbackground=t["border"],
+                )
+                badge.pack(side=tk.LEFT)
+
+                tk.Label(row, text=desc,
+                         font=("TkDefaultFont", 10),
+                         bg=t["bg"], fg=t["fg"],
+                         anchor="w").pack(side=tk.LEFT, padx=(10, 0))
+
+        # ── Footer ────────────────────────────────────────
+        tk.Frame(top, height=1, bg=t["border"]).pack(fill=tk.X, side=tk.BOTTOM)
+        foot = tk.Frame(top, bg=t["surface"], height=56)
+        foot.pack(fill=tk.X, side=tk.BOTTOM)
+        foot.pack_propagate(False)
+        tk.Button(
+            foot, text="Close", command=top.destroy,
+            relief="flat", cursor="hand2",
+            bg=t["accent"], fg=t["accent_fg"],
+            activebackground=t["accent_hover"], activeforeground=t["accent_fg"],
+            font=("TkDefaultFont", 11, "bold"),
+        ).place(x=14, y=8, relwidth=1.0, width=-28, height=40)
+
+        top.bind("<Escape>", lambda e: top.destroy())
+
+        # Size to content
+        top.update_idletasks()
+        top.geometry(f"380x{top.winfo_reqheight() + 20}")
+
+    # ═══════════════════════════════════════════════
+    #  UNDO / REDO
+    # ═══════════════════════════════════════════════
+
+    def undo_action(self):
+        desc = self.history.undo()
+        if desc:
+            self.refresh_tasks()
+            self._update_undo_redo_buttons()
+            save_tasks(self.manager)
+
+    def redo_action(self):
+        desc = self.history.redo()
+        if desc:
+            self.refresh_tasks()
+            self._update_undo_redo_buttons()
+            save_tasks(self.manager)
+
+    def _update_undo_redo_buttons(self):
+        t = DARK_THEME if self.dark_mode else LIGHT_THEME
+        can_undo = self.history.can_undo()
+        can_redo = self.history.can_redo()
+
+        self.undo_btn.configure(
+            text=f"↩  {self.history.undo_label()}",
+            state="normal" if can_undo else "disabled",
+            fg=t["secondary_btn_fg"] if can_undo else t["muted_fg"],
+        )
+        self.redo_btn.configure(
+            text=f"↪  {self.history.redo_label()}",
+            state="normal" if can_redo else "disabled",
+            fg=t["secondary_btn_fg"] if can_redo else t["muted_fg"],
+        )
 
     def auto_save(self):
         save_tasks(self.manager)

@@ -383,17 +383,30 @@ Bug fixed:
 -
 
 
---- version 0.3.102 --- 18.03.2026
+--- version 0.3.173 --- 18.03.2026
 Changes:
-- 
+- Undo / Redo System (Command Pattern)
+- keyboard shortcut's to the Undo / Redo System (Ctrl + Z, Ctrl + Y or Ctrl + Shift + Z)
+- once added the Category, right now we can choose the color of it
 
 Bug fixed:
--
+- in the Edit Task window there was no button to save the changes
 
 
---- version 0.3.102 --- 19.03.2026
+--- version 0.3.185 --- 19.03.2026
 Changes:
-- 
+- Ctrl + N - new task
+- Ctrl + E - edit selected Task
+- Delete - delete selecte Task
+- Ctrl + D - mark selected Task as done
+- Ctrl + F - focus search box + select all text
+- Escape - xlear search -> clear category filter -> clear calendar filter
+- Ctrl + Home - select first Task
+- Ctrl + End - select last task
+- Ctrl + T - open settings
+- ? - show shortcuts help card
+- Auto-save on right now is signaling by a green dot
+- added the button ? in the footer to show the keyboards shortcuts help card
 
 Bug fixed:
 -

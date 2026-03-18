@@ -37,14 +37,45 @@ CATEGORY_COLORS_DARK = [
 ]
 
 
-def get_color(category: str, categories: list, dark_mode: bool) -> tuple:
-    """Return (bg, fg) colour pair for the given category name."""
+def auto_fg(bg_hex: str) -> str:
+    """Return black or white foreground that contrasts best with bg_hex."""
+    bg_hex = bg_hex.lstrip("#")
+    r, g, b = int(bg_hex[0:2], 16), int(bg_hex[2:4], 16), int(bg_hex[4:6], 16)
+    # Perceived luminance (ITU-R BT.709)
+    luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
+    return "#1C1917" if luminance > 0.45 else "#F5F5F4"
+
+
+def get_color(category: str, categories: list, dark_mode: bool,
+              custom_colors: dict | None = None) -> tuple:
+    """Return (bg, fg) colour pair for the given category name.
+
+    custom_colors: optional dict  {name: {"light": (bg, fg), "dark": (bg, fg)}}
+    """
+    if custom_colors and category in custom_colors:
+        key = "dark" if dark_mode else "light"
+        entry = custom_colors[category]
+        if key in entry:
+            return entry[key]
     palette = CATEGORY_COLORS_DARK if dark_mode else CATEGORY_COLORS_LIGHT
     try:
         idx = categories.index(category) % len(palette)
     except ValueError:
         idx = len(palette) - 1
     return palette[idx]
+
+
+def load_category_colors(config: dict) -> dict:
+    """Load custom per-category colours from config."""
+    raw = config.get("category_colors", {})
+    result = {}
+    for name, entry in raw.items():
+        result[name] = {}
+        if "light" in entry:
+            result[name]["light"] = tuple(entry["light"])
+        if "dark" in entry:
+            result[name]["dark"] = tuple(entry["dark"])
+    return result
 
 
 def load_categories(config: dict) -> list:
