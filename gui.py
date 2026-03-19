@@ -6,6 +6,7 @@ from storage import save_tasks, load_tasks, save_config, load_config
 from datetime import datetime
 from tkcalendar import Calendar
 import logic
+import export as export_module
 import categories as cat_module
 from categories import auto_fg
 from commands import (
@@ -302,6 +303,15 @@ class TodoApp:
             width=2, padx=6, pady=5
         )
         self.help_btn.pack(side=tk.LEFT, padx=(0, 6))
+
+        self.export_btn = tk.Button(
+            self.right_frame, text="⬆  Export",
+            command=self.open_export_gui,
+            relief="flat", cursor="hand2",
+            font=("TkDefaultFont", 10),
+            padx=11, pady=5
+        )
+        self.export_btn.pack(side=tk.LEFT, padx=(0, 6))
 
         self.settings_btn = tk.Button(
             self.right_frame, text="⚙  Settings",
@@ -676,6 +686,13 @@ class TodoApp:
         )
         self._bind_hover(self.help_btn, lambda: False,
                          rest_bg=t["surface2"], hover_bg=t["border"])
+        self.export_btn.configure(
+            bg=t["surface2"], fg=t["muted_fg"],
+            activebackground=t["border"],
+            activeforeground=t["fg"]
+        )
+        self._bind_hover(self.export_btn, lambda: False,
+                         rest_bg=t["surface2"], hover_bg=t["border"])
         self.settings_btn.configure(
             bg=t["surface2"], fg=t["muted_fg"],
             activebackground=t["border"],
@@ -802,6 +819,132 @@ class TodoApp:
                 all_btn.configure(bg=t["accent"], fg=t["accent_fg"])
             else:
                 all_btn.configure(bg=t["surface2"], fg=t["muted_fg"])
+
+    def open_export_gui(self):
+        """Export dialog: choose format, scope, and destination file."""
+        top = self._make_dialog("Export Tasks")
+        top.resizable(False, False)
+        t = DARK_THEME if self.dark_mode else LIGHT_THEME
+
+        # Footer first (pack before grid content)
+        tk.Frame(top, height=1, bg=t["border"]).pack(side=tk.BOTTOM, fill=tk.X)
+        foot = tk.Frame(top, bg=t["surface"], height=64)
+        foot.pack(side=tk.BOTTOM, fill=tk.X)
+        foot.pack_propagate(False)
+
+        # Header
+        hdr = tk.Frame(top, bg=t["surface"])
+        hdr.pack(fill=tk.X)
+        tk.Label(hdr, text="⬆  Export Tasks",
+                 font=("Georgia", 13, "bold"),
+                 bg=t["surface"], fg=t["fg"]).pack(anchor="w", padx=18, pady=(14, 12))
+        tk.Frame(top, height=1, bg=t["border"]).pack(fill=tk.X)
+
+        body = tk.Frame(top, bg=t["bg"])
+        body.pack(fill=tk.BOTH, expand=True, padx=18, pady=14)
+
+        def section(text):
+            tk.Label(body, text=text, font=("TkDefaultFont", 9, "bold"),
+                     bg=t["bg"], fg=t["muted_fg"]).pack(anchor="w", pady=(10, 3))
+            tk.Frame(body, height=1, bg=t["border"]).pack(fill=tk.X, pady=(0, 8))
+
+        # ── Format ────────────────────────────────────────
+        section("FORMAT")
+        fmt_var = tk.StringVar(value="CSV")
+        fmt_row = tk.Frame(body, bg=t["bg"])
+        fmt_row.pack(fill=tk.X)
+        for fmt, desc in [("CSV", "Spreadsheet (.csv)"),
+                          ("TXT", "Plain text (.txt)"),
+                          ("PDF", "PDF report (.pdf)")]:
+            col = tk.Frame(fmt_row, bg=t["bg"])
+            col.pack(side=tk.LEFT, padx=(0, 16))
+            tk.Radiobutton(
+                col, text=fmt, variable=fmt_var, value=fmt,
+                bg=t["bg"], fg=t["fg"],
+                activebackground=t["bg"], selectcolor=t["surface2"],
+                relief="flat", cursor="hand2",
+                font=("TkDefaultFont", 11, "bold")
+            ).pack(anchor="w")
+            tk.Label(col, text=desc, bg=t["bg"], fg=t["muted_fg"],
+                     font=("TkDefaultFont", 8)).pack(anchor="w")
+
+        # ── Scope ─────────────────────────────────────────
+        section("SCOPE")
+        scope_var = tk.StringVar(value="all")
+        for val, label in [
+            ("all",    "All tasks"),
+            ("active", "Active tasks only"),
+            ("done",   "Done tasks only"),
+        ]:
+            tk.Radiobutton(
+                body, text=label, variable=scope_var, value=val,
+                bg=t["bg"], fg=t["fg"],
+                activebackground=t["bg"], selectcolor=t["surface2"],
+                relief="flat", cursor="hand2",
+                font=("TkDefaultFont", 10)
+            ).pack(anchor="w", pady=1)
+
+        # ── Status label ──────────────────────────────────
+        status_lbl = tk.Label(body, text="", bg=t["bg"],
+                              font=("TkDefaultFont", 9))
+        status_lbl.pack(anchor="w", pady=(12, 0))
+
+        def do_export():
+            from tkinter.filedialog import asksaveasfilename
+            fmt   = fmt_var.get()
+            scope = scope_var.get()
+
+            tasks = list(self.manager.tasks)
+            if scope == "active":
+                tasks = [t for t in tasks if not t.done]
+            elif scope == "done":
+                tasks = [t for t in tasks if t.done]
+
+            if not tasks:
+                status_lbl.configure(text="No tasks match the selected scope.",
+                                     fg=t.get("error", "#EF4444") if isinstance(t, dict) else "#EF4444")
+                return
+
+            ext_map  = {"CSV": ".csv", "TXT": ".txt", "PDF": ".pdf"}
+            type_map = {"CSV": [("CSV files", "*.csv")],
+                        "TXT": [("Text files", "*.txt")],
+                        "PDF": [("PDF files", "*.pdf")]}
+
+            path = asksaveasfilename(
+                defaultextension=ext_map[fmt],
+                filetypes=type_map[fmt],
+                title=f"Export as {fmt}",
+                parent=top,
+            )
+            if not path:
+                return
+
+            try:
+                if fmt == "CSV":
+                    export_module.export_csv(tasks, path)
+                elif fmt == "TXT":
+                    export_module.export_txt(tasks, path)
+                elif fmt == "PDF":
+                    export_module.export_pdf(tasks, path)
+
+                status_lbl.configure(
+                    text=f"Exported {len(tasks)} tasks to {fmt} successfully.",
+                    fg="#4ADE80"
+                )
+            except ImportError as e:
+                status_lbl.configure(text=str(e), fg="#EF4444")
+            except Exception as e:
+                status_lbl.configure(text=f"Error: {e}", fg="#EF4444")
+
+        tk.Button(
+            foot, text="⬆  Export", command=do_export,
+            relief="flat", cursor="hand2",
+            bg=t["accent"], fg=t["accent_fg"],
+            activebackground=t["accent_hover"], activeforeground=t["accent_fg"],
+            font=("TkDefaultFont", 12, "bold"),
+        ).place(x=14, y=10, relwidth=1.0, width=-28, height=44)
+
+        top.geometry("380x460")
 
     def open_settings_gui(self):
         """Full Settings dialog with tabbed sections."""
