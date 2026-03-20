@@ -7,6 +7,7 @@ from datetime import datetime
 from tkcalendar import Calendar
 import logic
 import export as export_module
+import importer as import_module
 import categories as cat_module
 from categories import auto_fg
 from commands import (
@@ -303,6 +304,15 @@ class TodoApp:
             width=2, padx=6, pady=5
         )
         self.help_btn.pack(side=tk.LEFT, padx=(0, 6))
+
+        self.import_btn = tk.Button(
+            self.right_frame, text="⬇  Import",
+            command=self.open_import_gui,
+            relief="flat", cursor="hand2",
+            font=("TkDefaultFont", 10),
+            padx=11, pady=5
+        )
+        self.import_btn.pack(side=tk.LEFT, padx=(0, 6))
 
         self.export_btn = tk.Button(
             self.right_frame, text="⬆  Export",
@@ -686,6 +696,13 @@ class TodoApp:
         )
         self._bind_hover(self.help_btn, lambda: False,
                          rest_bg=t["surface2"], hover_bg=t["border"])
+        self.import_btn.configure(
+            bg=t["surface2"], fg=t["muted_fg"],
+            activebackground=t["border"],
+            activeforeground=t["fg"]
+        )
+        self._bind_hover(self.import_btn, lambda: False,
+                         rest_bg=t["surface2"], hover_bg=t["border"])
         self.export_btn.configure(
             bg=t["surface2"], fg=t["muted_fg"],
             activebackground=t["border"],
@@ -819,6 +836,186 @@ class TodoApp:
                 all_btn.configure(bg=t["accent"], fg=t["accent_fg"])
             else:
                 all_btn.configure(bg=t["surface2"], fg=t["muted_fg"])
+
+    def open_import_gui(self):
+        """Import tasks from CSV, TXT, or PDF."""
+        from tkinter.filedialog import askopenfilename
+        from tasks import Task
+
+        top = self._make_dialog("Import Tasks")
+        top.resizable(False, False)
+        t = DARK_THEME if self.dark_mode else LIGHT_THEME
+
+        # Footer first
+        tk.Frame(top, height=1, bg=t["border"]).pack(side=tk.BOTTOM, fill=tk.X)
+        foot = tk.Frame(top, bg=t["surface"], height=64)
+        foot.pack(side=tk.BOTTOM, fill=tk.X)
+        foot.pack_propagate(False)
+
+        # Header
+        hdr = tk.Frame(top, bg=t["surface"])
+        hdr.pack(fill=tk.X)
+        tk.Label(hdr, text="⬇  Import Tasks",
+                 font=("Georgia", 13, "bold"),
+                 bg=t["surface"], fg=t["fg"]).pack(anchor="w", padx=18, pady=(14, 12))
+        tk.Frame(top, height=1, bg=t["border"]).pack(fill=tk.X)
+
+        body = tk.Frame(top, bg=t["bg"])
+        body.pack(fill=tk.BOTH, expand=True, padx=18, pady=14)
+
+        def section(text):
+            tk.Label(body, text=text, font=("TkDefaultFont", 9, "bold"),
+                     bg=t["bg"], fg=t["muted_fg"]).pack(anchor="w", pady=(10, 3))
+            tk.Frame(body, height=1, bg=t["border"]).pack(fill=tk.X, pady=(0, 8))
+
+        # ── File picker ───────────────────────────────────
+        section("FILE")
+        file_row = tk.Frame(body, bg=t["bg"])
+        file_row.pack(fill=tk.X)
+
+        file_var = tk.StringVar(value="No file selected")
+        file_lbl = tk.Label(file_row, textvariable=file_var,
+                            bg=t["surface2"], fg=t["muted_fg"],
+                            font=("TkDefaultFont", 9),
+                            anchor="w", padx=8,
+                            highlightthickness=1,
+                            highlightbackground=t["border"])
+        file_lbl.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=5)
+
+        chosen_path = {"v": None}
+
+        def pick_file():
+            path = askopenfilename(
+                title="Choose file to import",
+                filetypes=[
+                    ("Supported files", "*.csv *.txt *.pdf"),
+                    ("CSV files", "*.csv"),
+                    ("Text files", "*.txt"),
+                    ("PDF files", "*.pdf"),
+                ],
+                parent=top,
+            )
+            if path:
+                chosen_path["v"] = path
+                import os
+                file_var.set(os.path.basename(path))
+                file_lbl.configure(fg=t["fg"])
+                status_lbl.configure(text="")
+                _preview()
+
+        self._btn(file_row, t, "Browse…", pick_file).pack(side=tk.LEFT, padx=(8, 0))
+
+        # ── Duplicate handling ────────────────────────────
+        section("DUPLICATES")
+        dup_var = tk.StringVar(value="skip")
+        for val, label, desc in [
+            ("skip",    "Skip",    "Don't import tasks with the same name"),
+            ("replace", "Replace", "Overwrite existing tasks with the same name"),
+            ("keep",    "Keep all","Import all tasks even if names match"),
+        ]:
+            row = tk.Frame(body, bg=t["bg"])
+            row.pack(fill=tk.X, pady=1)
+            tk.Radiobutton(row, text=label, variable=dup_var, value=val,
+                           bg=t["bg"], fg=t["fg"],
+                           activebackground=t["bg"], selectcolor=t["surface2"],
+                           relief="flat", cursor="hand2",
+                           font=("TkDefaultFont", 10, "bold")).pack(side=tk.LEFT)
+            tk.Label(row, text=f"  — {desc}", bg=t["bg"], fg=t["muted_fg"],
+                     font=("TkDefaultFont", 9)).pack(side=tk.LEFT)
+
+        # ── Preview count ─────────────────────────────────
+        preview_lbl = tk.Label(body, text="", bg=t["bg"], fg=t["muted_fg"],
+                               font=("TkDefaultFont", 9, "italic"))
+        preview_lbl.pack(anchor="w", pady=(10, 0))
+
+        status_lbl = tk.Label(body, text="", bg=t["bg"],
+                              font=("TkDefaultFont", 9))
+        status_lbl.pack(anchor="w", pady=(4, 0))
+
+        parsed_tasks = {"v": []}
+
+        def _preview():
+            path = chosen_path["v"]
+            if not path:
+                return
+            try:
+                ext = path.lower().rsplit(".", 1)[-1]
+                if ext == "csv":
+                    rows = import_module.import_csv(path)
+                elif ext == "txt":
+                    rows = import_module.import_txt(path)
+                elif ext == "pdf":
+                    rows = import_module.import_pdf(path)
+                else:
+                    rows = []
+                parsed_tasks["v"] = rows
+                preview_lbl.configure(
+                    text=f"Found {len(rows)} task(s) in file.",
+                    fg="#4ADE80" if rows else t["muted_fg"]
+                )
+            except ImportError as e:
+                preview_lbl.configure(text=str(e), fg="#EF4444")
+            except Exception as e:
+                preview_lbl.configure(text=f"Parse error: {e}", fg="#EF4444")
+
+        def do_import():
+            rows = parsed_tasks["v"]
+            if not rows:
+                status_lbl.configure(text="No tasks to import. Pick a file first.",
+                                     fg="#EF4444")
+                return
+
+            dup = dup_var.get()
+            existing_names = {task.name.lower() for task in self.manager.tasks}
+            added = skipped = replaced = 0
+
+            for row in rows:
+                name = row["name"].strip()
+                if not name:
+                    continue
+                is_dup = name.lower() in existing_names
+
+                if is_dup and dup == "skip":
+                    skipped += 1
+                    continue
+
+                if is_dup and dup == "replace":
+                    self.manager.tasks = [
+                        tk_task for tk_task in self.manager.tasks
+                        if tk_task.name.lower() != name.lower()
+                    ]
+                    replaced += 1
+
+                new_task = Task(
+                    name,
+                    row.get("description", ""),
+                    row.get("due_date"),
+                    row.get("priority", "Medium"),
+                )
+                new_task.category = row.get("category", "General")
+                new_task.done     = row.get("done", False)
+                new_task.update_status()
+                self.manager.tasks.append(new_task)
+                existing_names.add(name.lower())
+                added += 1
+
+            save_tasks(self.manager)
+            self.refresh_tasks()
+
+            parts = [f"{added} imported"]
+            if replaced: parts.append(f"{replaced} replaced")
+            if skipped:  parts.append(f"{skipped} skipped")
+            status_lbl.configure(text="Done — " + ", ".join(parts) + ".", fg="#4ADE80")
+
+        tk.Button(
+            foot, text="⬇  Import", command=do_import,
+            relief="flat", cursor="hand2",
+            bg=t["accent"], fg=t["accent_fg"],
+            activebackground=t["accent_hover"], activeforeground=t["accent_fg"],
+            font=("TkDefaultFont", 12, "bold"),
+        ).place(x=14, y=10, relwidth=1.0, width=-28, height=44)
+
+        top.geometry("420x520")
 
     def open_export_gui(self):
         """Export dialog: choose format, scope, and destination file."""
