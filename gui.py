@@ -1,3 +1,5 @@
+import os
+import webbrowser
 import tkinter as tk
 import tkinter.ttk as ttk
 from tkinter import messagebox
@@ -8,6 +10,7 @@ from tkcalendar import Calendar
 import logic
 import export as export_module
 import importer as import_module
+import share as share_module
 import categories as cat_module
 from categories import auto_fg
 from commands import (
@@ -1086,55 +1089,177 @@ class TodoApp:
                               font=("TkDefaultFont", 9))
         status_lbl.pack(anchor="w", pady=(12, 0))
 
+        # Share panel (built after generating the temp file)
+        share_frame = tk.Frame(body, bg=t["bg"])
+        temp_files  = {"path": None}   # track temp file for cleanup on close
+
+        def _build_share_panel(tmp_path, fmt, task_list):
+            """Show all share destinations — no mandatory save-to-PC."""
+            for w in share_frame.winfo_children():
+                w.destroy()
+            share_frame.pack(fill=tk.X, pady=(10, 0))
+
+            tk.Frame(share_frame, height=1, bg=t["border"]).pack(fill=tk.X, pady=(0, 8))
+            tk.Label(share_frame, text="WHAT WOULD YOU LIKE TO DO?",
+                     font=("TkDefaultFont", 8, "bold"),
+                     bg=t["bg"], fg=t["muted_fg"]).pack(anchor="w", pady=(0, 6))
+
+            def _share_btn(parent, label, cmd):
+                b = tk.Button(parent, text=label, command=cmd,
+                              relief="flat", cursor="hand2",
+                              bg=t["surface2"], fg=t["fg"],
+                              activebackground=t["border"],
+                              font=("TkDefaultFont", 9), padx=8, pady=5)
+                b.pack(side=tk.LEFT, padx=(0, 6), pady=2)
+                return b
+
+            def _row():
+                r = tk.Frame(share_frame, bg=t["bg"])
+                r.pack(fill=tk.X)
+                return r
+
+            # ── Save to PC ───────────────────────────────────
+            row_save = _row()
+            def save_to_pc():
+                from tkinter.filedialog import asksaveasfilename
+                ext_map  = {"CSV": ".csv", "TXT": ".txt", "PDF": ".pdf"}
+                type_map = {"CSV": [("CSV files", "*.csv")],
+                            "TXT": [("Text files", "*.txt")],
+                            "PDF": [("PDF files", "*.pdf")]}
+                dest = asksaveasfilename(
+                    initialfile=os.path.basename(tmp_path),
+                    defaultextension=ext_map[fmt],
+                    filetypes=type_map[fmt],
+                    title="Save export file",
+                    parent=top,
+                )
+                if dest:
+                    import shutil
+                    shutil.copy2(tmp_path, dest)
+                    status_lbl.configure(
+                        text=f"✓  Saved to {os.path.basename(dest)}",
+                        fg="#4ADE80"
+                    )
+
+            _share_btn(row_save, "💾  Save to PC", save_to_pc)
+            _share_btn(row_save, "📂  Open file",
+                       lambda: share_module.open_file(tmp_path))
+            _share_btn(row_save, "🗂  Show folder",
+                       lambda: share_module.reveal_in_folder(tmp_path))
+
+            # ── Clipboard ────────────────────────────────────
+            row_clip = _row()
+            clip_lbl = tk.Label(row_clip, text="", bg=t["bg"],
+                                fg="#4ADE80", font=("TkDefaultFont", 8))
+            def copy_path():
+                share_module.copy_path_to_clipboard(tmp_path, self.root)
+                clip_lbl.configure(text="Path copied!")
+                top.after(2000, lambda: clip_lbl.configure(text=""))
+            def copy_content():
+                ok = share_module.copy_content_to_clipboard(tmp_path, self.root)
+                clip_lbl.configure(text="Copied!" if ok else "Cannot copy PDF.")
+                top.after(2000, lambda: clip_lbl.configure(text=""))
+
+            _share_btn(row_clip, "📋  Copy path", copy_path)
+            if fmt in ("CSV", "TXT"):
+                _share_btn(row_clip, "📄  Copy content", copy_content)
+            clip_lbl.pack(side=tk.LEFT, padx=(6, 0))
+
+            # ── Email ────────────────────────────────────────
+            row_mail = _row()
+            def send_mail():
+                fname = os.path.basename(tmp_path)
+                if not share_module.send_email_outlook(tmp_path, f"Tasks export — {fname}"):
+                    share_module.send_email(tmp_path, f"Tasks export — {fname}")
+
+            _share_btn(row_mail, "✉️  Send by email", send_mail)
+            if fmt == "PDF":
+                tk.Label(row_mail,
+                         text="(Outlook: attached automatically)",
+                         bg=t["bg"], fg=t["muted_fg"],
+                         font=("TkDefaultFont", 8)).pack(side=tk.LEFT, padx=(6, 0))
+
+            # ── Messaging ────────────────────────────────────
+            row_msg = _row()
+            if fmt in ("TXT", "CSV"):
+                share_text = share_module.tasks_to_share_text(task_list)
+                for name, icon, fn in share_module.COMMUNICATORS:
+                    _share_btn(row_msg, f"{icon}  {name}",
+                               lambda f=fn: f(share_text))
+            else:
+                def _open_wa(): webbrowser.open("https://web.whatsapp.com")
+                def _open_tg(): webbrowser.open("https://web.telegram.org")
+                _share_btn(row_msg, "💬  WhatsApp Web", _open_wa)
+                _share_btn(row_msg, "✈️  Telegram Web",  _open_tg)
+                tk.Label(row_msg, text="— attach PDF manually",
+                         bg=t["bg"], fg=t["muted_fg"],
+                         font=("TkDefaultFont", 8)).pack(side=tk.LEFT, padx=(4, 0))
+
+            # Resize to fit
+            top.update_idletasks()
+            new_h = min(top.winfo_reqheight() + 20, 700)
+            top.geometry(f"420x{new_h}")
+
         def do_export():
-            from tkinter.filedialog import asksaveasfilename
+            import tempfile
             fmt   = fmt_var.get()
             scope = scope_var.get()
 
             tasks = list(self.manager.tasks)
             if scope == "active":
-                tasks = [t for t in tasks if not t.done]
+                tasks = [tk_t for tk_t in tasks if not tk_t.done]
             elif scope == "done":
-                tasks = [t for t in tasks if t.done]
+                tasks = [tk_t for tk_t in tasks if tk_t.done]
 
             if not tasks:
                 status_lbl.configure(text="No tasks match the selected scope.",
-                                     fg=t.get("error", "#EF4444") if isinstance(t, dict) else "#EF4444")
+                                     fg="#EF4444")
                 return
 
-            ext_map  = {"CSV": ".csv", "TXT": ".txt", "PDF": ".pdf"}
-            type_map = {"CSV": [("CSV files", "*.csv")],
-                        "TXT": [("Text files", "*.txt")],
-                        "PDF": [("PDF files", "*.pdf")]}
-
-            path = asksaveasfilename(
-                defaultextension=ext_map[fmt],
-                filetypes=type_map[fmt],
-                title=f"Export as {fmt}",
-                parent=top,
-            )
-            if not path:
-                return
-
+            ext_map = {"CSV": ".csv", "TXT": ".txt", "PDF": ".pdf"}
             try:
+                # Write to a named temp file that persists until dialog closes
+                if temp_files["path"] and os.path.exists(temp_files["path"]):
+                    try: os.unlink(temp_files["path"])
+                    except: pass
+
+                from datetime import datetime as dt
+                stamp   = dt.now().strftime("%d%m%Y_%H%M")
+                suffix  = ext_map[fmt]
+                fname   = f"mytasks_{stamp}{suffix}"
+
+                tmp_dir  = tempfile.gettempdir()
+                tmp_path = os.path.join(tmp_dir, fname)
+                temp_files["path"] = tmp_path
+
                 if fmt == "CSV":
-                    export_module.export_csv(tasks, path)
+                    export_module.export_csv(tasks, tmp_path)
                 elif fmt == "TXT":
-                    export_module.export_txt(tasks, path)
+                    export_module.export_txt(tasks, tmp_path)
                 elif fmt == "PDF":
-                    export_module.export_pdf(tasks, path)
+                    export_module.export_pdf(tasks, tmp_path)
 
                 status_lbl.configure(
-                    text=f"Exported {len(tasks)} tasks to {fmt} successfully.",
+                    text=f"✓  {len(tasks)} tasks ready — choose what to do:",
                     fg="#4ADE80"
                 )
+                _build_share_panel(tmp_path, fmt, tasks)
+
             except ImportError as e:
                 status_lbl.configure(text=str(e), fg="#EF4444")
             except Exception as e:
                 status_lbl.configure(text=f"Error: {e}", fg="#EF4444")
 
+        def _cleanup_temp():
+            if temp_files["path"] and os.path.exists(temp_files["path"]):
+                try: os.unlink(temp_files["path"])
+                except: pass
+            top.destroy()
+
+        top.protocol("WM_DELETE_WINDOW", _cleanup_temp)
+
         tk.Button(
-            foot, text="⬆  Export", command=do_export,
+            foot, text="⚡  Generate", command=do_export,
             relief="flat", cursor="hand2",
             bg=t["accent"], fg=t["accent_fg"],
             activebackground=t["accent_hover"], activeforeground=t["accent_fg"],
