@@ -165,7 +165,7 @@ class CommandHistory:
         return bool(self._redo_stack)
 
     def undo_label(self) -> str:
-        return f"Undo  {self._undo_stack[-1].description}" if self._undo_stack else "Undo"
+        return self._undo_stack[-1].description if self._undo_stack else ""
 
     def redo_label(self) -> str:
-        return f"Redo  {self._redo_stack[-1].description}" if self._redo_stack else "Redo"
+        return self._redo_stack[-1].description if self._redo_stack else ""

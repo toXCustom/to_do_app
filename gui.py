@@ -11,6 +11,7 @@ import logic
 import export as export_module
 import importer as import_module
 import share as share_module
+from reminders import ReminderService, PLYER_AVAILABLE as REMINDERS_AVAILABLE, DEFAULT_CONFIG as REMINDER_DEFAULTS
 import categories as cat_module
 from categories import auto_fg
 from commands import (
@@ -94,6 +95,9 @@ class TodoApp:
         self.search_var = tk.StringVar()
         self.search_var.trace_add("write", lambda *args: self.refresh_tasks())
 
+        # Reminder config
+        self.reminder_cfg = {**REMINDER_DEFAULTS, **config.get("reminders", {})}
+
         self._build_ui()
         # ── Keyboard shortcuts ──────────────────────────
         kb = self.root.bind_all
@@ -119,8 +123,9 @@ class TodoApp:
         self.apply_theme()
         self.refresh_tasks()
         self.auto_save()
-        self.root.after(100, self._bind_cal_day_tooltips)  # after widgets fully rendered
+        self.root.after(100, self._bind_cal_day_tooltips)
         self.root.after(300, self._start_tray)
+        self.root.after(500, self._start_reminders)
 
     # ═══════════════════════════════════════════════
     #  UI BUILD
@@ -344,14 +349,40 @@ class TodoApp:
         self.sidebar.pack(side=tk.LEFT, fill=tk.Y, padx=(10, 0), pady=10)
         self.sidebar.pack_propagate(False)
 
+        # Scrollable canvas inside sidebar
+        _sb_canvas = self._sb_canvas = tk.Canvas(self.sidebar, width=218, highlightthickness=0, bd=0)
+        _sb_scroll  = ttk.Scrollbar(self.sidebar, orient="vertical", command=_sb_canvas.yview)
+        _sb_canvas.configure(yscrollcommand=_sb_scroll.set)
+        _sb_scroll.pack(side=tk.LEFT, fill=tk.Y)
+        _sb_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Inner frame — all sidebar widgets go here
+        _sb_inner = self._sb_inner = tk.Frame(_sb_canvas)
+        _sb_win   = _sb_canvas.create_window((0, 0), window=_sb_inner, anchor="nw")
+
+        def _sb_on_inner_resize(e):
+            _sb_canvas.configure(scrollregion=_sb_canvas.bbox("all"))
+        def _sb_on_canvas_resize(e):
+            _sb_canvas.itemconfig(_sb_win, width=e.width)
+        _sb_inner.bind("<Configure>", _sb_on_inner_resize)
+        _sb_canvas.bind("<Configure>", _sb_on_canvas_resize)
+
+        def _sb_mousewheel(e):
+            _sb_canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+        _sb_canvas.bind("<Enter>", lambda e: _sb_canvas.bind_all("<MouseWheel>", _sb_mousewheel))
+        _sb_canvas.bind("<Leave>", lambda e: _sb_canvas.unbind_all("<MouseWheel>"))
+
+        # Use _sb_inner as the parent for all sidebar content
+        sb = _sb_inner
+
         self.cal_label = tk.Label(
-            self.sidebar, text="📅  Calendar",
+            sb, text="📅  Calendar",
             font=("TkDefaultFont", 10, "bold")
         )
         self.cal_label.pack(anchor="w", padx=6, pady=(0, 6))
 
         self.mini_cal = Calendar(
-            self.sidebar,
+            sb,
             selectmode="day",
             date_pattern="yyyy-mm-dd",
             showweeknumbers=False,
@@ -367,7 +398,7 @@ class TodoApp:
 
         # "Show all" link below the calendar
         self.cal_reset_btn = tk.Button(
-            self.sidebar, text="Show all tasks",
+            sb, text="Show all tasks",
             relief="flat", cursor="hand2",
             font=("TkDefaultFont", 9),
             command=self._calendar_reset
@@ -375,16 +406,16 @@ class TodoApp:
         self.cal_reset_btn.pack(pady=(6, 0))
 
         # ── Dashboard Stats Panel ─────────────────────
-        self.stats_sep = tk.Frame(self.sidebar, height=1)
+        self.stats_sep = tk.Frame(sb, height=1)
         self.stats_sep.pack(fill=tk.X, padx=8, pady=(14, 0))
 
         self.stats_label = tk.Label(
-            self.sidebar, text="📊  Stats",
+            sb, text="📊  Stats",
             font=("TkDefaultFont", 10, "bold")
         )
         self.stats_label.pack(anchor="w", padx=10, pady=(8, 6))
 
-        self.stats_frame = tk.Frame(self.sidebar)
+        self.stats_frame = tk.Frame(sb)
         self.stats_frame.pack(fill=tk.X, padx=8)
 
         # Each stat row: icon + label on left, value on right
@@ -409,7 +440,7 @@ class TodoApp:
             self._stat_widgets[key] = (row, lbl, val)
 
         # Completion progress bar (canvas-drawn)
-        self.progress_frame = tk.Frame(self.sidebar)
+        self.progress_frame = tk.Frame(sb)
         self.progress_frame.pack(fill=tk.X, padx=10, pady=(10, 4))
 
         self.progress_header = tk.Frame(self.progress_frame)
@@ -430,12 +461,11 @@ class TodoApp:
         )
         self.progress_canvas.pack(fill=tk.X, pady=(3, 0))
 
-
         # ── Category Filter Panel ────────────────────
-        self.cat_sep = tk.Frame(self.sidebar, height=1)
+        self.cat_sep = tk.Frame(sb, height=1)
         self.cat_sep.pack(fill=tk.X, padx=8, pady=(12, 0))
 
-        cat_header_row = tk.Frame(self.sidebar)
+        cat_header_row = tk.Frame(sb)
         cat_header_row.pack(fill=tk.X, padx=10, pady=(8, 4))
 
         self.cat_heading = tk.Label(
@@ -444,9 +474,7 @@ class TodoApp:
         )
         self.cat_heading.pack(side=tk.LEFT)
 
-
-
-        self.cat_filter_frame = tk.Frame(self.sidebar)
+        self.cat_filter_frame = tk.Frame(sb)
         self.cat_filter_frame.pack(fill=tk.X, padx=8, pady=(0, 8))
         self._cat_filter_buttons = {}
         self._build_category_filter_buttons()
@@ -544,6 +572,47 @@ class TodoApp:
         btn.bind("<Enter>", on_enter)
         btn.bind("<Leave>", on_leave)
 
+    def _bind_tooltip(self, widget, text_fn):
+        """
+        Show a small tooltip above the widget on hover.
+        text_fn is a callable so the label is evaluated at hover time (always fresh).
+        """
+        tip = {"win": None}
+
+        def show(e):
+            msg = text_fn()
+            if not msg:
+                return
+            t   = DARK_THEME if self.dark_mode else LIGHT_THEME
+            win = tk.Toplevel(self.root)
+            win.overrideredirect(True)
+            win.attributes("-topmost", True)
+            win.configure(bg=t["border"])
+            tk.Label(
+                win, text=msg,
+                bg=t["surface2"], fg=t["fg"],
+                font=("TkDefaultFont", 9),
+                padx=10, pady=5,
+            ).pack(padx=1, pady=1)
+            win.update_idletasks()
+            wx = widget.winfo_rootx()
+            wy = widget.winfo_rooty()
+            ww = win.winfo_reqwidth()
+            wh = win.winfo_reqheight()
+            win.geometry(f"+{wx}+{wy - wh - 4}")
+            tip["win"] = win
+
+        def hide(e):
+            if tip["win"]:
+                try:
+                    tip["win"].destroy()
+                except Exception:
+                    pass
+                tip["win"] = None
+
+        widget.bind("<Enter>", lambda e: (hide(e), show(e)), add="+")
+        widget.bind("<Leave>", hide, add="+")
+
     def _update_filter_buttons(self):
         t = DARK_THEME if self.dark_mode else LIGHT_THEME
         active = self.filter_type.get()
@@ -630,6 +699,9 @@ class TodoApp:
         self.sidebar.configure(bg=t["bg"])
         self.sidebar_sep.configure(bg=t["border"])
         self.content_frame.configure(bg=t["bg"])
+        # Theme the scrollable canvas and inner frame
+        self._sb_canvas.configure(bg=t["bg"])
+        self._sb_inner.configure(bg=t["bg"])
         self.cal_label.configure(bg=t["bg"], fg=t["muted_fg"])
         self.cal_reset_btn.configure(
             bg=t["bg"], fg=t["accent"],
@@ -779,6 +851,7 @@ class TodoApp:
             "categories":        self.categories,
             "category_colors":   self.category_colors,
             "minimize_to_tray":  self.minimize_to_tray,
+            "reminders":         self.reminder_cfg,
         })
 
     # ═══════════════════════════════════════════════
@@ -1271,8 +1344,8 @@ class TodoApp:
     def open_settings_gui(self):
         """Full Settings dialog with tabbed sections."""
         top = self._make_dialog("Settings")
-        top.geometry("460x660")
-        top.resizable(False, False)
+        top.resizable(True, True)
+        top.minsize(460, 420)
         t = DARK_THEME if self.dark_mode else LIGHT_THEME
 
         # ── Header ────────────────────────────────────────
@@ -1280,12 +1353,62 @@ class TodoApp:
         hdr.pack(fill=tk.X)
         tk.Label(hdr, text="⚙  Settings", font=("Georgia", 14, "bold"),
                  bg=t["surface"], fg=t["fg"]).pack(anchor="w", padx=18, pady=(14, 12))
-
         tk.Frame(top, height=1, bg=t["border"]).pack(fill=tk.X)
 
-        # ── Scrollable body ───────────────────────────────
-        body = tk.Frame(top, bg=t["bg"])
-        body.pack(fill=tk.BOTH, expand=True, padx=18, pady=12)
+        # ── Footer (packed before canvas so it's always visible) ──
+        tk.Frame(top, height=1, bg=t["border"]).pack(fill=tk.X, side=tk.BOTTOM)
+        foot = tk.Frame(top, bg=t["surface"], height=70)
+        foot.pack(fill=tk.X, side=tk.BOTTOM)
+        foot.pack_propagate(False)
+        tk.Button(
+            foot, text="Close", command=top.destroy,
+            relief="flat", cursor="hand2",
+            bg=t["accent"], fg=t["accent_fg"],
+            activebackground=t["accent_hover"], activeforeground=t["accent_fg"],
+            font=("TkDefaultFont", 13, "bold"),
+        ).place(x=18, y=10, relwidth=1.0, width=-36, height=50)
+
+        # ── Scrollable canvas body ─────────────────────────
+        canvas_frame = tk.Frame(top, bg=t["bg"])
+        canvas_frame.pack(fill=tk.BOTH, expand=True)
+
+        canvas = tk.Canvas(canvas_frame, bg=t["bg"], highlightthickness=0, bd=0)
+        scrollbar = tk.Scrollbar(canvas_frame, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        body = tk.Frame(canvas, bg=t["bg"])
+        body_win = canvas.create_window((0, 0), window=body, anchor="nw")
+
+        # Keep inner frame width in sync with canvas width
+        def _on_canvas_resize(e):
+            canvas.itemconfig(body_win, width=e.width)
+        canvas.bind("<Configure>", _on_canvas_resize)
+
+        # Update scroll region whenever body content changes
+        def _on_body_resize(e):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            # Auto-fit height up to 85% of screen
+            content_h  = body.winfo_reqheight()
+            screen_h   = top.winfo_screenheight()
+            max_h      = int(screen_h * 0.85)
+            header_h   = hdr.winfo_reqheight() + 2   # +border
+            footer_h   = foot.winfo_reqheight() + 2
+            dialog_h   = min(content_h + header_h + footer_h + 10, max_h)
+            top.geometry(f"460x{dialog_h}")
+        body.bind("<Configure>", _on_body_resize)
+
+        # Mouse-wheel scroll
+        def _on_mousewheel(e):
+            canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        top.bind("<Destroy>", lambda e: canvas.unbind_all("<MouseWheel>"))
+
+        # Inner padding wrapper
+        pad = tk.Frame(body, bg=t["bg"])
+        pad.pack(fill=tk.BOTH, expand=True, padx=18, pady=12)
 
         def section(parent, title):
             """Render a section heading."""
@@ -1303,7 +1426,7 @@ class TodoApp:
             return r
 
         # ══ APPEARANCE ════════════════════════════════════
-        section(body, "APPEARANCE")
+        section(pad, "APPEARANCE")
 
         # Dark mode toggle
         dark_var = tk.BooleanVar(value=self.dark_mode)
@@ -1311,8 +1434,6 @@ class TodoApp:
             self.dark_mode = dark_var.get()
             self.save_ui_config()
             self.apply_theme()
-            # Re-colour this dialog too
-            _retheme()
 
         def row_dark(parent):
             chk = tk.Checkbutton(parent, variable=dark_var, command=toggle_dark,
@@ -1321,10 +1442,10 @@ class TodoApp:
                                  selectcolor=t["surface2"],
                                  relief="flat", cursor="hand2")
             chk.pack(side=tk.RIGHT)
-        row(body, "Dark mode", row_dark)
+        row(pad, "Dark mode", row_dark)
 
         # ══ BEHAVIOUR ═════════════════════════════════════
-        section(body, "BEHAVIOUR")
+        section(pad, "BEHAVIOUR")
 
         tray_var = tk.BooleanVar(value=self.minimize_to_tray)
         tray_note = "(requires pystray)" if not TRAY_AVAILABLE else ""
@@ -1340,12 +1461,65 @@ class TodoApp:
                                  relief="flat", cursor="hand2",
                                  state="normal" if TRAY_AVAILABLE else "disabled")
             chk.pack(side=tk.RIGHT)
-        row(body, f"Minimise to tray on close  {tray_note}", row_tray)
+        row(pad, f"Minimise to tray on close  {tray_note}", row_tray)
 
-        # ══ CATEGORIES ════════════════════════════════════
-        section(body, "CATEGORIES")
+        # ══ REMINDERS ═════════════════════════════════════
+        section(pad, "REMINDERS")
 
-        cat_outer = tk.Frame(body, bg=t["bg"])
+        rem_vars = {}
+        remind_labels = [
+            ("reminders_enabled", "Enable task reminders"),
+            ("remind_overdue",    "Notify for overdue tasks"),
+            ("remind_today",      "Notify for tasks due today"),
+            ("remind_tomorrow",   "Notify for tasks due tomorrow"),
+            ("remind_3days",      "Notify for tasks due within 3 days"),
+        ]
+
+        def make_toggle_rem(key, var):
+            def _toggle():
+                self.reminder_cfg[key] = var.get()
+                self.save_ui_config()
+                if hasattr(self, "_reminder_svc"):
+                    self._reminder_svc.update_config(self.reminder_cfg)
+                # Enable/disable sub-checkboxes when master toggle changes
+                if key == "reminders_enabled":
+                    state = "normal" if var.get() else "disabled"
+                    for k, v in rem_vars.items():
+                        if k != "reminders_enabled":
+                            v["chk"].configure(state=state)
+            return _toggle
+
+        for key, label in remind_labels:
+            var = tk.BooleanVar(value=self.reminder_cfg.get(key, True))
+            enabled = self.reminder_cfg.get("reminders_enabled", True)
+            state = "normal" if (key == "reminders_enabled" or enabled) else "disabled"
+
+            def _row_rem(parent, v=var, k=key):
+                chk = tk.Checkbutton(
+                    parent, variable=v,
+                    command=make_toggle_rem(k, v),
+                    bg=t["bg"], fg=t["fg"],
+                    activebackground=t["bg"],
+                    selectcolor=t["surface2"],
+                    relief="flat", cursor="hand2",
+                    state=state,
+                )
+                chk.pack(side=tk.RIGHT)
+                rem_vars[k] = {"chk": chk, "var": v}
+
+            row(pad, label, _row_rem)
+
+        if not REMINDERS_AVAILABLE:
+            note = tk.Label(pad,
+                            text="Install plyer for OS notifications:  pip install plyer\n"
+                                 "Without it, in-app toasts are used.",
+                            bg=t["bg"], fg=t["muted_fg"],
+                            font=("TkDefaultFont", 8),
+                            justify="left")
+            note.pack(anchor="w", pady=(4, 0))
+        section(pad, "CATEGORIES")
+
+        cat_outer = tk.Frame(pad, bg=t["bg"])
         cat_outer.pack(fill=tk.X)
 
         # Scrollable list of categories
@@ -1457,23 +1631,6 @@ class TodoApp:
 
         self._btn(add_row, t, "Add", add_category, primary=True).pack(side=tk.LEFT)
         new_cat_entry.bind("<Return>", lambda e: add_category())
-
-        # ── Footer ────────────────────────────────────────
-        tk.Frame(top, height=1, bg=t["border"]).pack(fill=tk.X, side=tk.BOTTOM)
-        foot = tk.Frame(top, bg=t["surface"], height=70)
-        foot.pack(fill=tk.X, side=tk.BOTTOM)
-        foot.pack_propagate(False)   # prevent children from shrinking the frame
-        tk.Button(
-            foot, text="Close", command=top.destroy,
-            relief="flat", cursor="hand2",
-            bg=t["accent"], fg=t["accent_fg"],
-            activebackground=t["accent_hover"], activeforeground=t["accent_fg"],
-            font=("TkDefaultFont", 13, "bold"),
-        ).place(x=18, y=10, relwidth=1.0, width=-36, height=50)
-
-        # ── Live re-theme helper (updates this dialog when dark mode toggles) ─
-        def _retheme():
-            pass  # dialog stays open; user sees main app theme change live
 
     def _manage_categories_gui(self):
         """Dialog to add/remove custom categories."""
@@ -2079,6 +2236,8 @@ class TodoApp:
     # ═══════════════════════════════════════════════
 
     def refresh_tasks(self):
+        if hasattr(self, "_reminder_svc"):
+            self._reminder_svc.reset_fired()
         for row in self.task_tree.get_children():
             self.task_tree.delete(row)
 
@@ -2138,7 +2297,10 @@ class TodoApp:
         total   = len(all_tasks)
         done    = sum(1 for t in all_tasks if t.done)
         active  = total - done
-        overdue = sum(1 for t in all_tasks if t.is_overdue)
+        overdue = sum(
+            1 for t in all_tasks
+            if not t.done and t.due_date and t.due_date < today
+        )
         due_today = sum(
             1 for t in all_tasks
             if t.due_date and not t.done and t.due_date == today
@@ -2347,15 +2509,20 @@ class TodoApp:
         can_redo = self.history.can_redo()
 
         self.undo_btn.configure(
-            text=f"↩  {self.history.undo_label()}",
+            text="↩  Undo",
             state="normal" if can_undo else "disabled",
             fg=t["secondary_btn_fg"] if can_undo else t["muted_fg"],
         )
         self.redo_btn.configure(
-            text=f"↪  {self.history.redo_label()}",
+            text="↪  Redo",
             state="normal" if can_redo else "disabled",
             fg=t["secondary_btn_fg"] if can_redo else t["muted_fg"],
         )
+        # Bind live tooltips showing the exact action name
+        self._bind_tooltip(self.undo_btn,
+            lambda: self.history.undo_label() if self.history.can_undo() else "")
+        self._bind_tooltip(self.redo_btn,
+            lambda: self.history.redo_label() if self.history.can_redo() else "")
 
     def auto_save(self):
         save_tasks(self.manager)
@@ -2385,9 +2552,12 @@ class TodoApp:
 
     def _build_tray_menu(self):
         """Build the right-click context menu shown on the tray icon."""
+        from datetime import date as _date
+        _today  = _date.today()
         total   = len(self.manager.tasks)
         done    = sum(1 for t in self.manager.tasks if t.done)
-        overdue = sum(1 for t in self.manager.tasks if t.is_overdue)
+        overdue = sum(1 for t in self.manager.tasks
+                      if not t.done and t.due_date and t.due_date < _today)
         label   = f"{total - done} active  •  {overdue} overdue"
 
         return pystray.Menu(
@@ -2438,6 +2608,14 @@ class TodoApp:
         """Fully quit — save state, stop tray, destroy window."""
         self.root.after(0, self.on_close)
 
+    def _start_reminders(self):
+        self._reminder_svc = ReminderService(
+            self.root,
+            lambda: list(self.manager.tasks),
+            self.reminder_cfg,
+        )
+        self._reminder_svc.start()
+
     def _on_window_close(self):
         """Minimise to tray or quit depending on user preference."""
         if TRAY_AVAILABLE and self._tray_icon and self.minimize_to_tray:
@@ -2452,6 +2630,8 @@ class TodoApp:
                 self._tray_icon.stop()
             except Exception:
                 pass
+        if hasattr(self, "_reminder_svc"):
+            self._reminder_svc.stop()
         save_tasks(self.manager)
         self.save_ui_config()
         self.root.destroy()
