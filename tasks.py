@@ -5,27 +5,30 @@ class Task:
         self.name = name
         self.description = description
         self.done = False
-        self.due_date = due_date  # format YYYY-MM-DD
-        self.priority = priority  # High / Medium / Low
+        self.due_date = due_date
+        self.priority = priority
         self.category = "General"
-        self.created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.created_at   = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.completed_at = None   # set when task is marked done
         self.update_status()
 
     def update_status(self):
         if self.due_date:
+            # self.due_date is already a datetime.date object
             self.is_overdue = datetime.now().date() > self.due_date
         else:
             self.is_overdue = False
 
     def to_dict(self):
         return {
-            "name": self.name,
-            "description": self.description,
-            "done": self.done,
-            "due_date": self.due_date,
-            "priority": self.priority,
-            "category": self.category,
-            "created_at": self.created_at
+            "name":         self.name,
+            "description":  self.description,
+            "done":         self.done,
+            "due_date":     self.due_date,
+            "priority":     self.priority,
+            "category":     self.category,
+            "created_at":   self.created_at,
+            "completed_at": self.completed_at,
         }
 
     @staticmethod
@@ -36,9 +39,10 @@ class Task:
             data.get("due_date"),
             data.get("priority", "Medium")
         )
-        task.done = data.get("done", False)
-        task.category = data.get("category", "General")
-        task.created_at = data.get("created_at", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        task.done         = data.get("done", False)
+        task.category     = data.get("category", "General")
+        task.created_at   = data.get("created_at",   datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        task.completed_at = data.get("completed_at", None)
         task.update_status()
         return task
 
@@ -62,6 +66,7 @@ class TaskManager:
         for task in self.tasks:
             if task.name == name:
                 task.done = True
+                task.completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 task.update_status()
                 break
 

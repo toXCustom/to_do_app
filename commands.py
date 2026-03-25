@@ -70,32 +70,42 @@ class EditTaskCommand(Command):
 
 class MarkDoneCommand(Command):
     def __init__(self, task, previous_done: bool):
+        from datetime import datetime as _dt
         self.task          = task
         self.previous_done = previous_done
+        self.prev_completed_at = task.completed_at
         self.description   = ('Mark "' + task.name + '" done') if not previous_done else ('Unmark "' + task.name + '"')
+        self._now          = _dt.now().strftime("%Y-%m-%d %H:%M:%S")
 
     def execute(self):
         self.task.done = True
+        self.task.completed_at = self._now
         self.task.update_status()
 
     def undo(self):
         self.task.done = self.previous_done
+        self.task.completed_at = self.prev_completed_at
         self.task.update_status()
 
 
 class ToggleDoneCommand(Command):
     def __init__(self, task):
+        from datetime import datetime as _dt
         self.task          = task
         self.previous_done = task.done
+        self.prev_completed_at = task.completed_at
         state = "done" if not task.done else "active"
         self.description   = 'Toggle "' + task.name + '" → ' + state
+        self._now          = _dt.now().strftime("%Y-%m-%d %H:%M:%S")
 
     def execute(self):
         self.task.done = not self.previous_done
+        self.task.completed_at = self._now if self.task.done else None
         self.task.update_status()
 
     def undo(self):
         self.task.done = self.previous_done
+        self.task.completed_at = self.prev_completed_at
         self.task.update_status()
 
 
@@ -104,22 +114,24 @@ class ToggleDoneCommand(Command):
 def snapshot(task) -> dict:
     """Capture all mutable fields of a task as a plain dict."""
     return {
-        "name":        task.name,
-        "description": task.description,
-        "priority":    task.priority,
-        "due_date":    task.due_date,
-        "done":        task.done,
-        "category":    getattr(task, "category", "General"),
+        "name":         task.name,
+        "description":  task.description,
+        "priority":     task.priority,
+        "due_date":     task.due_date,
+        "done":         task.done,
+        "category":     getattr(task, "category", "General"),
+        "completed_at": getattr(task, "completed_at", None),
     }
 
 
 def _apply_snapshot(task, snap: dict):
-    task.name        = snap["name"]
-    task.description = snap["description"]
-    task.priority    = snap["priority"]
-    task.due_date    = snap["due_date"]
-    task.done        = snap["done"]
-    task.category    = snap.get("category", "General")
+    task.name         = snap["name"]
+    task.description  = snap["description"]
+    task.priority     = snap["priority"]
+    task.due_date     = snap["due_date"]
+    task.done         = snap["done"]
+    task.category     = snap.get("category", "General")
+    task.completed_at = snap.get("completed_at", None)
     task.update_status()
 
 

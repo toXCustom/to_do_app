@@ -461,6 +461,38 @@ class TodoApp:
         )
         self.progress_canvas.pack(fill=tk.X, pady=(3, 0))
 
+        # ── Weekly Heatmap ────────────────────────────
+        self.heatmap_sep = tk.Frame(sb, height=1)
+        self.heatmap_sep.pack(fill=tk.X, padx=8, pady=(14, 0))
+
+        heatmap_header = tk.Frame(sb)
+        heatmap_header.pack(fill=tk.X, padx=10, pady=(8, 4))
+        self.heatmap_label = tk.Label(
+            heatmap_header, text="📊  Activity",
+            font=("TkDefaultFont", 10, "bold")
+        )
+        self.heatmap_label.pack(side=tk.LEFT)
+        self.heatmap_range_lbl = tk.Label(
+            heatmap_header, text="",
+            font=("TkDefaultFont", 8)
+        )
+        self.heatmap_range_lbl.pack(side=tk.RIGHT)
+
+        # Canvas: 13 weeks (~3 months). LEFT_PAD=14 for day labels, CELL=11, GAP=1 → 14+13×12=170px
+        _HM_CELL =  9
+        _HM_GAP  =  1
+        _HM_COLS = 17
+        _HM_ROWS =  7
+        _HM_LPAD = 14
+        hm_w = _HM_LPAD + _HM_COLS * (_HM_CELL + _HM_GAP)   # 170px
+        hm_h = _HM_ROWS * (_HM_CELL + _HM_GAP) + 14
+        self.heatmap_canvas = tk.Canvas(
+            sb, width=hm_w, height=hm_h,
+            highlightthickness=0, bd=0
+        )
+        self.heatmap_canvas.pack(padx=2, pady=(0, 4), anchor="w")
+        self._heatmap_tip = {"win": None}
+
         # ── Category Filter Panel ────────────────────
         self.cat_sep = tk.Frame(sb, height=1)
         self.cat_sep.pack(fill=tk.X, padx=8, pady=(12, 0))
@@ -740,6 +772,13 @@ class TodoApp:
             lbl.configure(bg=t["bg"], fg=t["muted_fg"])
             val.configure(bg=t["bg"], fg=t["fg"])
         self.refresh_stats()
+
+        # Heatmap
+        self.heatmap_sep.configure(bg=t["border"])
+        self.heatmap_label.configure(bg=t["bg"], fg=t["muted_fg"])
+        self.heatmap_range_lbl.configure(bg=t["bg"], fg=t["muted_fg"])
+        self.heatmap_canvas.configure(bg=t["bg"])
+        self.heatmap_canvas.master.configure(bg=t["bg"])
 
         # Category filter panel
         self.cat_sep.configure(bg=t["border"])
@@ -2347,10 +2386,169 @@ class TodoApp:
                 0, 0, int(w * pct / 100), 6,
                 fill=fill_color, outline="", width=0
             )
+        self.refresh_heatmap()
 
-    # ═══════════════════════════════════════════════
-    #  KEYBOARD SHORTCUT HELPERS
-    # ═══════════════════════════════════════════════
+    def refresh_heatmap(self):
+        """Redraw the GitHub-style activity heatmap (last ~3 months, by due date)."""
+        from datetime import date, timedelta
+        from collections import defaultdict
+
+        WEEKS    = 17
+        DAYS     =  7
+        CELL     =  9
+        GAP      =  1
+        LEFT_PAD = 14
+        TOP_PAD  = 14
+
+        t      = DARK_THEME if self.dark_mode else LIGHT_THEME
+        canvas = self.heatmap_canvas
+        canvas.delete("all")
+
+        today       = date.today()
+        # Anchor: Monday of current week is the start of the last column
+        this_monday = today - timedelta(days=today.weekday())
+        grid_origin = this_monday - timedelta(weeks=WEEKS - 1)   # always exactly 13 cols
+        start_date  = grid_origin
+        total_cols  = WEEKS   # always exactly 13
+
+        # ── Count tasks per due date ──────────────────
+        day_counts: dict = defaultdict(int)
+        for task in self.manager.tasks:
+            if task.due_date:
+                try:
+                    d = task.due_date
+                    if start_date <= d <= today:
+                        day_counts[d] += 1
+                except (TypeError, AttributeError):
+                    pass
+
+        max_count = max(day_counts.values(), default=1)
+
+        # ── Colour scale (4 shades + empty) ──────────
+        if self.dark_mode:
+            EMPTY  = "#1C1F26"
+            SHADES = ["#0F3D20", "#1A6B38", "#25A055", "#2ECC6B"]
+        else:
+            EMPTY  = "#ECEAE6"
+            SHADES = ["#C6E9D4", "#7BC99A", "#3AA865", "#1E7D44"]
+
+        def _shade(count):
+            if count == 0:
+                return EMPTY
+            ratio = count / max_count
+            idx   = min(int(ratio * len(SHADES)), len(SHADES) - 1)
+            return SHADES[idx]
+
+        # ── Day-of-week labels (Mon Wed Fri) ──────────
+        DAY_LABELS = {0: "M", 2: "W", 4: "F"}
+        for dow, lbl in DAY_LABELS.items():
+            y = TOP_PAD + dow * (CELL + GAP) + CELL // 2
+            canvas.create_text(
+                LEFT_PAD - 4, y,
+                text=lbl, anchor="e",
+                font=("TkDefaultFont", 7),
+                fill=t["muted_fg"]
+            )
+
+        # ── Draw cells ────────────────────────────────
+        month_labels = {}
+        cell_meta    = {}
+
+        for week_idx in range(total_cols):
+            for dow in range(DAYS):
+                d = grid_origin + timedelta(weeks=week_idx, days=dow)
+                if d < start_date or d > today:
+                    continue   # skip days outside our window
+
+                x1 = LEFT_PAD + week_idx * (CELL + GAP)
+                y1 = TOP_PAD  + dow      * (CELL + GAP)
+                x2, y2 = x1 + CELL, y1 + CELL
+
+                color = _shade(day_counts.get(d, 0))
+                item_id = canvas.create_rectangle(
+                    x1, y1, x2, y2,
+                    fill=color, outline="", width=0,
+                )
+                cell_meta[item_id] = (d, day_counts.get(d, 0))
+
+                # Month label on first Monday-ish of each month
+                if dow == 0 and d.day <= 7:
+                    month_labels[x1] = d.strftime("%b")
+
+        # ── Month labels along the top ─────────────────
+        for x, label in month_labels.items():
+            canvas.create_text(
+                x, TOP_PAD - 4,
+                text=label, anchor="sw",
+                font=("TkDefaultFont", 7),
+                fill=t["muted_fg"]
+            )
+
+        # ── Date range label ──────────────────────────
+        self.heatmap_range_lbl.configure(
+            text=f"{start_date.strftime('%d %b')} – {today.strftime('%d %b %Y')}",
+            bg=t["bg"], fg=t["muted_fg"]
+        )
+
+        # ── Tooltip: track current hovered item id ────
+        tip      = self._heatmap_tip
+        tip["last_id"] = None   # last item id that triggered a tooltip
+
+        def _show_tip(item_id, ex, ey):
+            """Destroy old tip, create new one for item_id."""
+            if tip["win"]:
+                try:    tip["win"].destroy()
+                except: pass
+                tip["win"] = None
+
+            d, count = cell_meta[item_id]
+            label = d.strftime("%d %B %Y")
+            msg   = f"{label}\n{'No activity' if count == 0 else f'{count} task' + ('' if count == 1 else 's')}"
+
+            th = DARK_THEME if self.dark_mode else LIGHT_THEME
+            win = tk.Toplevel(self.root)
+            win.overrideredirect(True)
+            win.attributes("-topmost", True)
+            win.configure(bg=th["border"])
+            tk.Label(
+                win, text=msg,
+                bg=th["surface2"], fg=th["fg"],
+                font=("TkDefaultFont", 9),
+                justify="center", padx=10, pady=6
+            ).pack(padx=1, pady=1)
+            win.update_idletasks()
+            wx = canvas.winfo_rootx() + ex + 12
+            wy = canvas.winfo_rooty() + ey - win.winfo_reqheight() - 4
+            win.geometry(f"+{wx}+{wy}")
+            tip["win"] = win
+
+        def _on_motion(e):
+            item = canvas.find_closest(e.x, e.y)
+            if not item:
+                return
+            iid = item[0]
+            if iid not in cell_meta:
+                # Hovering over a label/text — hide tip
+                if tip["win"]:
+                    try:    tip["win"].destroy()
+                    except: pass
+                    tip["win"] = None
+                tip["last_id"] = None
+                return
+            if iid == tip["last_id"]:
+                return   # same cell, don't recreate
+            tip["last_id"] = iid
+            _show_tip(iid, e.x, e.y)
+
+        def _on_leave(e):
+            if tip["win"]:
+                try:    tip["win"].destroy()
+                except: pass
+                tip["win"] = None
+            tip["last_id"] = None
+
+        canvas.bind("<Motion>", _on_motion)
+        canvas.bind("<Leave>",  _on_leave)
 
     def _shortcut_delete(self):
         """Delete only when the task tree has focus (not while typing)."""
