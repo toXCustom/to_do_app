@@ -1,0 +1,1622 @@
+[
+    {
+        "name": "q",
+        "description": "qwe",
+        "due_date": "2026-04-15",
+        "priority": "Low",
+        "category": "General",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "a",
+        "description": "asd",
+        "due_date": "2026-08-19",
+        "priority": "Medium",
+        "category": "General",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "z",
+        "description": "zxc",
+        "due_date": "2027-04-29",
+        "priority": "High",
+        "category": "General",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "\u015amieci",
+        "description": "Wynie\u015b\u0107 \u015bmieci",
+        "due_date": "2026-03-07",
+        "priority": "Low",
+        "category": "General",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Drugi p\u0142otek",
+        "description": "Zrobi\u0107 drugi p\u0142otek do grz\u0105dki zewn\u0119trznej",
+        "due_date": "2026-03-06",
+        "priority": "High",
+        "category": "General",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Obiad",
+        "description": "Obiad na dzie\u0144 faceta",
+        "due_date": "2026-03-10",
+        "priority": "High",
+        "category": "General",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Buy groceries",
+        "description": "Milk eggs bread and vegetables",
+        "due_date": "2026-03-15",
+        "priority": "Low",
+        "category": "Shopping",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Prepare Q1 report",
+        "description": "Compile sales figures and write executive summary",
+        "due_date": "2026-03-14",
+        "priority": "High",
+        "category": "Work",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Schedule dentist appointment",
+        "description": "Call Dr Smith for routine checkup",
+        "due_date": "2026-03-20",
+        "priority": "Medium",
+        "category": "Health",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Pay electricity bill",
+        "description": "Online payment via bank portal",
+        "due_date": "2026-03-13",
+        "priority": "High",
+        "category": "Finance",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Call mom",
+        "description": "Weekly catch-up call",
+        "due_date": "2026-03-16",
+        "priority": "Low",
+        "category": "Personal",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Review pull request #47",
+        "description": "Frontend refactor needs thorough code review",
+        "due_date": "2026-03-13",
+        "priority": "High",
+        "category": "Work",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Buy birthday gift for Sara",
+        "description": "She likes books and candles",
+        "due_date": "2026-03-18",
+        "priority": "Medium",
+        "category": "Shopping",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Morning run 5km",
+        "description": "Stick to the training schedule",
+        "due_date": "2026-03-13",
+        "priority": "Medium",
+        "category": "Health",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Update LinkedIn profile",
+        "description": "Add recent projects and skills",
+        "due_date": "2026-03-30",
+        "priority": "Low",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Pay rent",
+        "description": "Bank transfer to landlord",
+        "due_date": "2026-04-01",
+        "priority": "High",
+        "category": "Finance",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Book flights for Easter",
+        "description": "Check Ryanair and Wizz Air prices",
+        "due_date": "2026-03-20",
+        "priority": "Medium",
+        "category": "Personal",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Team standup preparation",
+        "description": "Prepare blockers and progress updates",
+        "due_date": "2026-03-14",
+        "priority": "Medium",
+        "category": "Work",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Renew car insurance",
+        "description": "Compare quotes on Comparethemarket",
+        "due_date": "2026-03-25",
+        "priority": "High",
+        "category": "Finance",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Clean the apartment",
+        "description": "Full clean including windows and bathroom",
+        "due_date": "2026-03-21",
+        "priority": "Low",
+        "category": "Personal",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Submit tax return",
+        "description": "Gather all receipts and submit via portal",
+        "due_date": "2026-03-31",
+        "priority": "High",
+        "category": "Finance",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Read Clean Code chapter 5",
+        "description": "Software design principles",
+        "due_date": "2026-03-28",
+        "priority": "Low",
+        "category": "Work",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Buy new running shoes",
+        "description": "Nike or Asics size 43",
+        "due_date": "2026-03-25",
+        "priority": "Low",
+        "category": "Shopping",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Meditation 15 minutes",
+        "description": "Morning mindfulness session",
+        "due_date": "2026-03-13",
+        "priority": "Low",
+        "category": "Health",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Prepare presentation slides",
+        "description": "Quarterly review deck for management",
+        "due_date": "2026-03-17",
+        "priority": "High",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Order new monitor",
+        "description": "Dell 27 inch for home office setup",
+        "due_date": "2026-03-22",
+        "priority": "Medium",
+        "category": "Shopping",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Call bank about mortgage",
+        "description": "Ask about fixed rate remortgage options",
+        "due_date": "2026-03-19",
+        "priority": "Medium",
+        "category": "Finance",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Plan weekend trip",
+        "description": "Look into Krakow or Prague for April",
+        "due_date": "2026-04-05",
+        "priority": "Low",
+        "category": "Personal",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Write unit tests",
+        "description": "Cover the new authentication module",
+        "due_date": "2026-03-15",
+        "priority": "High",
+        "category": "Work",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Blood pressure check",
+        "description": "Visit pharmacy for quick reading",
+        "due_date": "2026-03-17",
+        "priority": "Medium",
+        "category": "Health",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Grocery order online",
+        "description": "Delivery for Thursday morning slot",
+        "due_date": "2026-03-13",
+        "priority": "Low",
+        "category": "Shopping",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Invest in ETF",
+        "description": "Monthly contribution to index fund",
+        "due_date": "2026-03-28",
+        "priority": "Medium",
+        "category": "Finance",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Fix leaking tap",
+        "description": "Buy washer from hardware store",
+        "due_date": "2026-03-23",
+        "priority": "Medium",
+        "category": "Personal",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Deploy to staging",
+        "description": "Push latest build and run smoke tests",
+        "due_date": "2026-03-13",
+        "priority": "High",
+        "category": "Work",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Buy vitamins D3 and B12",
+        "description": "Restock monthly supplement supply",
+        "due_date": "2026-03-20",
+        "priority": "Low",
+        "category": "Health",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Cancel unused subscriptions",
+        "description": "Adobe and old gym membership",
+        "due_date": "2026-03-16",
+        "priority": "Medium",
+        "category": "Finance",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Haircut appointment",
+        "description": "Book at the usual barber on Main St",
+        "due_date": "2026-03-19",
+        "priority": "Low",
+        "category": "Personal",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Document API endpoints",
+        "description": "Swagger docs for the new REST API",
+        "due_date": "2026-03-26",
+        "priority": "Medium",
+        "category": "Work",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Buy coffee beans",
+        "description": "1kg dark roast from the local roaster",
+        "due_date": "2026-03-15",
+        "priority": "Low",
+        "category": "Shopping",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "30 min yoga session",
+        "description": "Follow the YouTube routine",
+        "due_date": "2026-03-14",
+        "priority": "Low",
+        "category": "Health",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Check pension statement",
+        "description": "Log in and review annual statement",
+        "due_date": "2026-03-31",
+        "priority": "Low",
+        "category": "Finance",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Declutter wardrobe",
+        "description": "Donate old clothes to charity shop",
+        "due_date": "2026-03-28",
+        "priority": "Low",
+        "category": "Personal",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Fix broken unit tests",
+        "description": "Three tests failing after last merge",
+        "due_date": "2026-03-14",
+        "priority": "High",
+        "category": "Work",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Buy new notebook",
+        "description": "A5 dotted Leuchtturm for journaling",
+        "due_date": "2026-03-22",
+        "priority": "Low",
+        "category": "Shopping",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Book eye test",
+        "description": "Overdue by 6 months",
+        "due_date": "2026-03-18",
+        "priority": "High",
+        "category": "Health",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Prepare monthly budget",
+        "description": "Review March spending and plan April",
+        "due_date": "2026-03-31",
+        "priority": "Medium",
+        "category": "Finance",
+        "done": false,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Research new project ideas",
+        "description": "Brainstorm and document ideas for Q1 initiatives",
+        "due_date": "2025-11-20",
+        "priority": "High",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Fix login bug",
+        "description": "Resolve authentication timeout issue in production",
+        "due_date": "2025-11-22",
+        "priority": "High",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Buy winter jacket",
+        "description": "Check sales at local stores and online",
+        "due_date": "2025-11-25",
+        "priority": "Low",
+        "category": "Shopping",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Doctor checkup",
+        "description": "Annual physical examination at GP surgery",
+        "due_date": "2025-11-28",
+        "priority": "High",
+        "category": "Health",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Pay phone bill",
+        "description": "Monthly payment via online banking portal",
+        "due_date": "2025-11-30",
+        "priority": "Medium",
+        "category": "Finance",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Prepare sprint review",
+        "description": "Gather metrics and prepare slides for sprint 14 demo",
+        "due_date": "2025-12-03",
+        "priority": "High",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Order Christmas gifts",
+        "description": "Buy gifts for family members before shipping deadlines",
+        "due_date": "2025-12-05",
+        "priority": "Medium",
+        "category": "Shopping",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Run 10km training",
+        "description": "Long run as part of half marathon prep",
+        "due_date": "2025-12-08",
+        "priority": "Medium",
+        "category": "Health",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Review annual budget",
+        "description": "Go over spending categories and update spreadsheet",
+        "due_date": "2025-12-10",
+        "priority": "High",
+        "category": "Finance",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Write project proposal",
+        "description": "Draft proposal document for new internal tool",
+        "due_date": "2025-12-13",
+        "priority": "High",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Deep clean kitchen",
+        "description": "Clean oven fridge and cupboards thoroughly",
+        "due_date": "2025-12-15",
+        "priority": "Low",
+        "category": "Personal",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Cancel gym membership",
+        "description": "Switch to home workout routine to save costs",
+        "due_date": "2025-12-18",
+        "priority": "Medium",
+        "category": "Finance",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Buy groceries for Christmas",
+        "description": "Stock up on food and drinks for the holidays",
+        "due_date": "2025-12-21",
+        "priority": "Low",
+        "category": "Shopping",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Call grandparents",
+        "description": "Christmas call catch-up with grandma and grandpa",
+        "due_date": "2025-12-25",
+        "priority": "Medium",
+        "category": "Personal",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Update portfolio website",
+        "description": "Add new projects and refresh the design",
+        "due_date": "2025-12-29",
+        "priority": "Medium",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "New Year goals planning",
+        "description": "Write down personal and professional goals for 2026",
+        "due_date": "2026-01-01",
+        "priority": "High",
+        "category": "Personal",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Refactor database module",
+        "description": "Clean up legacy queries and add indexes",
+        "due_date": "2026-01-10",
+        "priority": "High",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Schedule eye test",
+        "description": "Book appointment overdue since last year",
+        "due_date": "2026-02-05",
+        "priority": "High",
+        "category": "Health",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "File January expenses",
+        "description": "Collect receipts and submit expense report",
+        "due_date": "2026-03-04",
+        "priority": "Medium",
+        "category": "Finance",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Write sprint retrospective notes",
+        "description": "Document what went well and what to improve",
+        "due_date": "2025-12-10",
+        "priority": "Medium",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Fix header alignment bug",
+        "description": "CSS fix for navigation bar on mobile",
+        "due_date": "2025-12-10",
+        "priority": "High",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Buy Christmas tree",
+        "description": "Pick up tree and decorations from garden centre",
+        "due_date": "2025-12-10",
+        "priority": "Low",
+        "category": "Shopping",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Deep clean bathroom",
+        "description": "Scrub tiles grout and fixtures",
+        "due_date": "2025-12-11",
+        "priority": "Low",
+        "category": "Personal",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Review pull request #51",
+        "description": "Code review for the new API module",
+        "due_date": "2025-12-12",
+        "priority": "High",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Order Secret Santa gift",
+        "description": "Buy gift under \u00a320 for office exchange",
+        "due_date": "2025-12-12",
+        "priority": "Low",
+        "category": "Shopping",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Meal prep for the week",
+        "description": "Cook lunches and dinners for Monday to Friday",
+        "due_date": "2025-12-13",
+        "priority": "Medium",
+        "category": "Health",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Pay credit card bill",
+        "description": "Online payment before statement date",
+        "due_date": "2025-12-13",
+        "priority": "High",
+        "category": "Finance",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Update project roadmap",
+        "description": "Revise Q1 milestones after stakeholder feedback",
+        "due_date": "2025-12-13",
+        "priority": "High",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Wrap Christmas presents",
+        "description": "Wrap and label all gifts before posting",
+        "due_date": "2025-12-14",
+        "priority": "Low",
+        "category": "Personal",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Run 8km morning",
+        "description": "Stick to training plan before the holidays",
+        "due_date": "2025-12-15",
+        "priority": "Medium",
+        "category": "Health",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Book train tickets for Christmas",
+        "description": "Reserve seats for Dec 23 journey home",
+        "due_date": "2025-12-15",
+        "priority": "High",
+        "category": "Personal",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Fix failing CI pipeline",
+        "description": "Resolve broken build on main branch",
+        "due_date": "2025-12-16",
+        "priority": "High",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Restock vitamins",
+        "description": "Buy D3 B12 and Omega-3 monthly supply",
+        "due_date": "2025-12-17",
+        "priority": "Low",
+        "category": "Health",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Send holiday cards",
+        "description": "Write and post cards to family and friends",
+        "due_date": "2025-12-17",
+        "priority": "Low",
+        "category": "Personal",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Deploy hotfix to production",
+        "description": "Push emergency fix for checkout bug",
+        "due_date": "2025-12-17",
+        "priority": "High",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Update emergency contact info",
+        "description": "Notify HR of new phone number",
+        "due_date": "2025-12-18",
+        "priority": "Low",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Archive old project files",
+        "description": "Move completed project folders to cold storage",
+        "due_date": "2025-12-20",
+        "priority": "Medium",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Christmas call with family",
+        "description": "Video call with parents and siblings",
+        "due_date": "2025-12-20",
+        "priority": "High",
+        "category": "Personal",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Donate old clothes",
+        "description": "Drop bag at charity shop on the high street",
+        "due_date": "2025-12-21",
+        "priority": "Low",
+        "category": "Personal",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Batch cook meals for New Year",
+        "description": "Prepare freezer meals before travelling",
+        "due_date": "2025-12-22",
+        "priority": "Medium",
+        "category": "Health",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Check pension contributions",
+        "description": "Log in and verify December contribution",
+        "due_date": "2025-12-23",
+        "priority": "Medium",
+        "category": "Finance",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Set up out-of-office reply",
+        "description": "Configure email autoresponder for holiday break",
+        "due_date": "2025-12-23",
+        "priority": "Low",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "New Year reflection journal",
+        "description": "Write year-in-review entry in notebook",
+        "due_date": "2025-12-28",
+        "priority": "Medium",
+        "category": "Personal",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Read Clean Architecture chapter 3",
+        "description": "Continue software design reading",
+        "due_date": "2025-12-28",
+        "priority": "Low",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Plan January goals",
+        "description": "Set three key objectives for the new month",
+        "due_date": "2025-12-29",
+        "priority": "High",
+        "category": "Personal",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Transfer savings to ISA",
+        "description": "Move December surplus to investment account",
+        "due_date": "2025-12-29",
+        "priority": "High",
+        "category": "Finance",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Update CV with 2025 achievements",
+        "description": "Add new projects and promotions",
+        "due_date": "2025-12-30",
+        "priority": "Medium",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Cancel streaming subscriptions",
+        "description": "Remove unused services before new year billing",
+        "due_date": "2025-12-30",
+        "priority": "Medium",
+        "category": "Finance",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Deep clean apartment",
+        "description": "Full clean before guests arrive for New Year",
+        "due_date": "2025-12-31",
+        "priority": "Low",
+        "category": "Personal",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "New Year resolutions list",
+        "description": "Write detailed goals with measurable targets",
+        "due_date": "2026-01-01",
+        "priority": "Medium",
+        "category": "Personal",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Set up 2026 budget spreadsheet",
+        "description": "Create monthly tracking template",
+        "due_date": "2026-01-02",
+        "priority": "High",
+        "category": "Finance",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Read industry newsletter",
+        "description": "Catch up on December tech news digest",
+        "due_date": "2026-01-03",
+        "priority": "Low",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Book dentist appointment",
+        "description": "Schedule overdue cleaning appointment",
+        "due_date": "2026-01-05",
+        "priority": "Medium",
+        "category": "Health",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Review subscription costs",
+        "description": "Audit all recurring payments for 2026",
+        "due_date": "2026-01-05",
+        "priority": "Medium",
+        "category": "Finance",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Write team update email",
+        "description": "Send first team communication of the year",
+        "due_date": "2026-01-05",
+        "priority": "Medium",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Grocery shop for the week",
+        "description": "Stock up on essentials after the holidays",
+        "due_date": "2026-01-06",
+        "priority": "Low",
+        "category": "Shopping",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Organise home office",
+        "description": "Tidy cables sort desk and restock supplies",
+        "due_date": "2026-01-07",
+        "priority": "Low",
+        "category": "Personal",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Fix authentication timeout bug",
+        "description": "Investigate and patch session expiry issue",
+        "due_date": "2026-01-08",
+        "priority": "High",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Pay January rent",
+        "description": "Bank transfer to landlord",
+        "due_date": "2026-01-08",
+        "priority": "High",
+        "category": "Finance",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Set up project tracking board",
+        "description": "Create new Kanban board for Q1 sprint",
+        "due_date": "2026-01-09",
+        "priority": "Medium",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Morning yoga 20 minutes",
+        "description": "Follow YouTube yoga for developers routine",
+        "due_date": "2026-01-10",
+        "priority": "Low",
+        "category": "Health",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Write unit tests for auth module",
+        "description": "Cover edge cases in login and logout",
+        "due_date": "2026-01-12",
+        "priority": "High",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Order new monitor stand",
+        "description": "Ergonomic stand for second screen setup",
+        "due_date": "2026-01-12",
+        "priority": "Medium",
+        "category": "Shopping",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Transfer monthly savings",
+        "description": "Move fixed amount to savings account",
+        "due_date": "2026-01-13",
+        "priority": "Medium",
+        "category": "Finance",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Meal prep Sunday",
+        "description": "Cook and portion meals for the working week",
+        "due_date": "2026-01-13",
+        "priority": "Low",
+        "category": "Health",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Submit January expense report",
+        "description": "Collect receipts and submit via portal",
+        "due_date": "2026-01-14",
+        "priority": "Medium",
+        "category": "Finance",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Deploy staging environment",
+        "description": "Push latest build and run smoke tests",
+        "due_date": "2026-01-14",
+        "priority": "High",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Call internet provider",
+        "description": "Enquire about upgrade to faster broadband",
+        "due_date": "2026-01-15",
+        "priority": "Medium",
+        "category": "Personal",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Run 10km training run",
+        "description": "Weekly long run in the park",
+        "due_date": "2026-01-17",
+        "priority": "Medium",
+        "category": "Health",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Review Q1 project milestones",
+        "description": "Update estimates after January kick-off",
+        "due_date": "2026-01-19",
+        "priority": "High",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Buy coffee and tea supplies",
+        "description": "Restock home office pantry for the month",
+        "due_date": "2026-01-19",
+        "priority": "Low",
+        "category": "Shopping",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Fix footer responsive layout",
+        "description": "CSS fix for mobile and tablet breakpoints",
+        "due_date": "2026-01-20",
+        "priority": "Medium",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Schedule team social",
+        "description": "Organise January team lunch",
+        "due_date": "2026-01-21",
+        "priority": "Low",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Pay car insurance instalment",
+        "description": "Monthly direct debit confirmed",
+        "due_date": "2026-01-21",
+        "priority": "High",
+        "category": "Finance",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Read two chapters of Clean Code",
+        "description": "Continue software craftsmanship reading",
+        "due_date": "2026-01-22",
+        "priority": "Low",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Morning meditation 15 min",
+        "description": "Mindfulness session using Headspace app",
+        "due_date": "2026-01-22",
+        "priority": "Low",
+        "category": "Health",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Organise digital photo library",
+        "description": "Sort and label photos from 2025",
+        "due_date": "2026-01-24",
+        "priority": "Low",
+        "category": "Personal",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Update API documentation",
+        "description": "Add new endpoint docs to Swagger",
+        "due_date": "2026-01-26",
+        "priority": "Medium",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Check investment portfolio",
+        "description": "Review ETF performance and rebalance if needed",
+        "due_date": "2026-01-26",
+        "priority": "Medium",
+        "category": "Finance",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Buy birthday gift for colleague",
+        "description": "Card and small gift for team celebration",
+        "due_date": "2026-01-27",
+        "priority": "Medium",
+        "category": "Shopping",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Fix database query performance",
+        "description": "Add index on orders table",
+        "due_date": "2026-01-28",
+        "priority": "High",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "30 min walk at lunch",
+        "description": "Take a break from desk and get fresh air",
+        "due_date": "2026-01-29",
+        "priority": "Low",
+        "category": "Health",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Prepare February budget",
+        "description": "Review January spend and plan next month",
+        "due_date": "2026-01-31",
+        "priority": "Medium",
+        "category": "Finance",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Write sprint planning notes",
+        "description": "Document goals and user stories for sprint 15",
+        "due_date": "2026-02-02",
+        "priority": "Medium",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Book flight for Easter trip",
+        "description": "Compare prices on Skyscanner",
+        "due_date": "2026-02-02",
+        "priority": "Medium",
+        "category": "Personal",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Buy protein powder",
+        "description": "Restock gym supplements",
+        "due_date": "2026-02-03",
+        "priority": "Low",
+        "category": "Shopping",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Run 6km interval training",
+        "description": "Sprint intervals on the track",
+        "due_date": "2026-02-04",
+        "priority": "Medium",
+        "category": "Health",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Refactor settings module",
+        "description": "Extract config logic into separate service",
+        "due_date": "2026-02-04",
+        "priority": "High",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Pay February rent",
+        "description": "Bank transfer to landlord before the 5th",
+        "due_date": "2026-02-04",
+        "priority": "High",
+        "category": "Finance",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Update LinkedIn with new project",
+        "description": "Add completed Q4 project to profile",
+        "due_date": "2026-02-05",
+        "priority": "Low",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Buy new headphones",
+        "description": "Research and order noise-cancelling headphones",
+        "due_date": "2026-02-07",
+        "priority": "Medium",
+        "category": "Shopping",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Weekly grocery shop",
+        "description": "Restock fridge and pantry",
+        "due_date": "2026-02-09",
+        "priority": "Low",
+        "category": "Shopping",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Transfer savings February",
+        "description": "Move monthly surplus to investment account",
+        "due_date": "2026-02-10",
+        "priority": "Medium",
+        "category": "Finance",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Morning run 7km",
+        "description": "Comfortable pace training run",
+        "due_date": "2026-02-11",
+        "priority": "Medium",
+        "category": "Health",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Review and merge open PRs",
+        "description": "Clear backlog of open pull requests",
+        "due_date": "2026-02-12",
+        "priority": "High",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Order desk lamp",
+        "description": "Better lighting for late evening work sessions",
+        "due_date": "2026-02-14",
+        "priority": "Low",
+        "category": "Shopping",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Cook Valentine's dinner",
+        "description": "Make pasta and dessert at home",
+        "due_date": "2026-02-14",
+        "priority": "Medium",
+        "category": "Personal",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Check eye test results",
+        "description": "Follow up with optician on prescription",
+        "due_date": "2026-02-16",
+        "priority": "Medium",
+        "category": "Health",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Prepare technical interview notes",
+        "description": "Practice system design and coding questions",
+        "due_date": "2026-02-17",
+        "priority": "High",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Submit tax return documents",
+        "description": "Upload supporting documents to HMRC portal",
+        "due_date": "2026-02-17",
+        "priority": "High",
+        "category": "Finance",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Buy new running gear",
+        "description": "Thermal base layer and gloves for winter",
+        "due_date": "2026-02-18",
+        "priority": "Low",
+        "category": "Shopping",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Run 8km steady pace",
+        "description": "Training run ahead of March race",
+        "due_date": "2026-02-21",
+        "priority": "Medium",
+        "category": "Health",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Write monthly progress report",
+        "description": "Document February achievements for manager",
+        "due_date": "2026-02-21",
+        "priority": "Medium",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Review insurance policies",
+        "description": "Annual check on home and life insurance",
+        "due_date": "2026-02-23",
+        "priority": "Medium",
+        "category": "Finance",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Fix login redirect bug",
+        "description": "Page redirects to wrong route after login",
+        "due_date": "2026-02-24",
+        "priority": "High",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Order birthday cake",
+        "description": "Reserve custom cake for friend's party",
+        "due_date": "2026-02-25",
+        "priority": "Medium",
+        "category": "Shopping",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Yoga session 30 minutes",
+        "description": "Full body yoga and stretching routine",
+        "due_date": "2026-02-26",
+        "priority": "Low",
+        "category": "Health",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Plan March sprint",
+        "description": "Define user stories and assign tickets",
+        "due_date": "2026-03-02",
+        "priority": "High",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Pay March rent",
+        "description": "Bank transfer to landlord",
+        "due_date": "2026-03-02",
+        "priority": "High",
+        "category": "Finance",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Final review of Q1 report",
+        "description": "Proofread and send to management",
+        "due_date": "2026-03-05",
+        "priority": "High",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Book hotel for conference",
+        "description": "Reserve room for April developer conference",
+        "due_date": "2026-03-05",
+        "priority": "Medium",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Monthly savings transfer",
+        "description": "Move surplus to ISA",
+        "due_date": "2026-03-05",
+        "priority": "Medium",
+        "category": "Finance",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Run 10km race pace",
+        "description": "Final long run before taper week",
+        "due_date": "2026-03-07",
+        "priority": "High",
+        "category": "Health",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Grocery shop and meal prep",
+        "description": "Weekly shop and batch cook for the week",
+        "due_date": "2026-03-08",
+        "priority": "Low",
+        "category": "Shopping",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Update project documentation",
+        "description": "Write up architecture decisions from Q1",
+        "due_date": "2026-03-09",
+        "priority": "Medium",
+        "category": "Work",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    },
+    {
+        "name": "Review March budget",
+        "description": "Check spending so far and adjust forecast",
+        "due_date": "2026-03-10",
+        "priority": "Low",
+        "category": "Finance",
+        "done": true,
+        "created_at": "2026-03-12 15:50:11",
+        "completed_at": null
+    }
+]

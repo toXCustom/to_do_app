@@ -1,0 +1,106 @@
+Name,Description,Category,Priority,Due Date,Done
+Write sprint retrospective notes,Document what went well and what to improve,Work,Medium,10/12/2025,Yes
+Fix header alignment bug,CSS fix for navigation bar on mobile,Work,High,10/12/2025,Yes
+Buy Christmas tree,Pick up tree and decorations from garden centre,Shopping,Low,10/12/2025,Yes
+Deep clean bathroom,Scrub tiles grout and fixtures,Personal,Low,11/12/2025,Yes
+Review pull request #51,Code review for the new API module,Work,High,12/12/2025,Yes
+Order Secret Santa gift,Buy gift under £20 for office exchange,Shopping,Low,12/12/2025,Yes
+Meal prep for the week,Cook lunches and dinners for Monday to Friday,Health,Medium,13/12/2025,Yes
+Pay credit card bill,Online payment before statement date,Finance,High,13/12/2025,Yes
+Update project roadmap,Revise Q1 milestones after stakeholder feedback,Work,High,13/12/2025,Yes
+Wrap Christmas presents,Wrap and label all gifts before posting,Personal,Low,14/12/2025,Yes
+Run 8km morning,Stick to training plan before the holidays,Health,Medium,15/12/2025,Yes
+Book train tickets for Christmas,Reserve seats for Dec 23 journey home,Personal,High,15/12/2025,Yes
+Fix failing CI pipeline,Resolve broken build on main branch,Work,High,16/12/2025,Yes
+Restock vitamins,Buy D3 B12 and Omega-3 monthly supply,Health,Low,17/12/2025,Yes
+Send holiday cards,Write and post cards to family and friends,Personal,Low,17/12/2025,Yes
+Deploy hotfix to production,Push emergency fix for checkout bug,Work,High,17/12/2025,Yes
+Update emergency contact info,Notify HR of new phone number,Work,Low,18/12/2025,Yes
+Buy groceries for Christmas,Stock up on food and drinks for the holidays,Shopping,Low,19/12/2025,Yes
+Archive old project files,Move completed project folders to cold storage,Work,Medium,20/12/2025,Yes
+Christmas call with family,Video call with parents and siblings,Personal,High,20/12/2025,Yes
+Donate old clothes,Drop bag at charity shop on the high street,Personal,Low,21/12/2025,Yes
+Batch cook meals for New Year,Prepare freezer meals before travelling,Health,Medium,22/12/2025,Yes
+Check pension contributions,Log in and verify December contribution,Finance,Medium,23/12/2025,Yes
+Set up out-of-office reply,Configure email autoresponder for holiday break,Work,Low,23/12/2025,Yes
+New Year reflection journal,Write year-in-review entry in notebook,Personal,Medium,28/12/2025,Yes
+Read Clean Architecture chapter 3,Continue software design reading,Work,Low,28/12/2025,Yes
+Plan January goals,Set three key objectives for the new month,Personal,High,29/12/2025,Yes
+Transfer savings to ISA,Move December surplus to investment account,Finance,High,29/12/2025,Yes
+Update CV with 2025 achievements,Add new projects and promotions,Work,Medium,30/12/2025,Yes
+Cancel streaming subscriptions,Remove unused services before new year billing,Finance,Medium,30/12/2025,Yes
+Deep clean apartment,Full clean before guests arrive for New Year,Personal,Low,31/12/2025,Yes
+New Year resolutions list,Write detailed goals with measurable targets,Personal,Medium,01/01/2026,Yes
+Morning run 5km,First run of the new year,Health,Medium,02/01/2026,Yes
+Set up 2026 budget spreadsheet,Create monthly tracking template,Finance,High,02/01/2026,Yes
+Read industry newsletter,Catch up on December tech news digest,Work,Low,03/01/2026,Yes
+Book dentist appointment,Schedule overdue cleaning appointment,Health,Medium,05/01/2026,Yes
+Review subscription costs,Audit all recurring payments for 2026,Finance,Medium,05/01/2026,Yes
+Write team update email,Send first team communication of the year,Work,Medium,05/01/2026,Yes
+Grocery shop for the week,Stock up on essentials after the holidays,Shopping,Low,06/01/2026,Yes
+Organise home office,Tidy cables sort desk and restock supplies,Personal,Low,07/01/2026,Yes
+Fix authentication timeout bug,Investigate and patch session expiry issue,Work,High,08/01/2026,Yes
+Blood pressure check,Visit pharmacy for quick monitoring reading,Health,Medium,08/01/2026,Yes
+Pay January rent,Bank transfer to landlord,Finance,High,08/01/2026,Yes
+Set up project tracking board,Create new Kanban board for Q1 sprint,Work,Medium,09/01/2026,Yes
+Buy new notebook,A5 dotted Leuchtturm for Q1 planning,Shopping,Low,09/01/2026,Yes
+Morning yoga 20 minutes,Follow YouTube yoga for developers routine,Health,Low,10/01/2026,Yes
+Write unit tests for auth module,Cover edge cases in login and logout,Work,High,12/01/2026,Yes
+Order new monitor stand,Ergonomic stand for second screen setup,Shopping,Medium,12/01/2026,Yes
+Transfer monthly savings,Move fixed amount to savings account,Finance,Medium,13/01/2026,Yes
+Meal prep Sunday,Cook and portion meals for the working week,Health,Low,13/01/2026,Yes
+Submit January expense report,Collect receipts and submit via portal,Finance,Medium,14/01/2026,Yes
+Deploy staging environment,Push latest build and run smoke tests,Work,High,14/01/2026,Yes
+Call internet provider,Enquire about upgrade to faster broadband,Personal,Medium,15/01/2026,Yes
+Run 10km training run,Weekly long run in the park,Health,Medium,17/01/2026,Yes
+Review Q1 project milestones,Update estimates after January kick-off,Work,High,19/01/2026,Yes
+Buy coffee and tea supplies,Restock home office pantry for the month,Shopping,Low,19/01/2026,Yes
+Fix footer responsive layout,CSS fix for mobile and tablet breakpoints,Work,Medium,20/01/2026,Yes
+Schedule team social,Organise January team lunch,Work,Low,21/01/2026,Yes
+Pay car insurance instalment,Monthly direct debit confirmed,Finance,High,21/01/2026,Yes
+Read two chapters of Clean Code,Continue software craftsmanship reading,Work,Low,22/01/2026,Yes
+Morning meditation 15 min,Mindfulness session using Headspace app,Health,Low,22/01/2026,Yes
+Organise digital photo library,Sort and label photos from 2025,Personal,Low,24/01/2026,Yes
+Update API documentation,Add new endpoint docs to Swagger,Work,Medium,26/01/2026,Yes
+Check investment portfolio,Review ETF performance and rebalance if needed,Finance,Medium,26/01/2026,Yes
+Buy birthday gift for colleague,Card and small gift for team celebration,Shopping,Medium,27/01/2026,Yes
+Fix database query performance,Add index on orders table,Work,High,28/01/2026,Yes
+30 min walk at lunch,Take a break from desk and get fresh air,Health,Low,29/01/2026,Yes
+Declutter wardrobe,Bag up old clothes for charity,Personal,Low,29/01/2026,Yes
+Prepare February budget,Review January spend and plan next month,Finance,Medium,31/01/2026,Yes
+Write sprint planning notes,Document goals and user stories for sprint 15,Work,Medium,02/02/2026,Yes
+Book flight for Easter trip,Compare prices on Skyscanner,Personal,Medium,02/02/2026,Yes
+Buy protein powder,Restock gym supplements,Shopping,Low,03/02/2026,Yes
+Run 6km interval training,Sprint intervals on the track,Health,Medium,04/02/2026,Yes
+Refactor settings module,Extract config logic into separate service,Work,High,04/02/2026,Yes
+Pay February rent,Bank transfer to landlord before the 5th,Finance,High,04/02/2026,Yes
+Update LinkedIn with new project,Add completed Q4 project to profile,Work,Low,05/02/2026,Yes
+Buy new headphones,Research and order noise-cancelling headphones,Shopping,Medium,07/02/2026,Yes
+Weekly grocery shop,Restock fridge and pantry,Shopping,Low,09/02/2026,Yes
+Fix broken unit tests,Three tests failing after last merge commit,Work,High,09/02/2026,Yes
+Transfer savings February,Move monthly surplus to investment account,Finance,Medium,10/02/2026,Yes
+Morning run 7km,Comfortable pace training run,Health,Medium,11/02/2026,Yes
+Review and merge open PRs,Clear backlog of open pull requests,Work,High,12/02/2026,Yes
+Order desk lamp,Better lighting for late evening work sessions,Shopping,Low,14/02/2026,Yes
+Cook Valentine's dinner,Make pasta and dessert at home,Personal,Medium,14/02/2026,Yes
+Check eye test results,Follow up with optician on prescription,Health,Medium,16/02/2026,Yes
+Prepare technical interview notes,Practice system design and coding questions,Work,High,17/02/2026,Yes
+Submit tax return documents,Upload supporting documents to HMRC portal,Finance,High,17/02/2026,Yes
+Buy new running gear,Thermal base layer and gloves for winter,Shopping,Low,18/02/2026,Yes
+Deep clean kitchen,Oven hob and extractor fan full clean,Personal,Low,19/02/2026,Yes
+Run 8km steady pace,Training run ahead of March race,Health,Medium,21/02/2026,Yes
+Write monthly progress report,Document February achievements for manager,Work,Medium,21/02/2026,Yes
+Review insurance policies,Annual check on home and life insurance,Finance,Medium,23/02/2026,Yes
+Fix login redirect bug,Page redirects to wrong route after login,Work,High,24/02/2026,Yes
+Order birthday cake,Reserve custom cake for friend's party,Shopping,Medium,25/02/2026,Yes
+Yoga session 30 minutes,Full body yoga and stretching routine,Health,Low,26/02/2026,Yes
+Plan March sprint,Define user stories and assign tickets,Work,High,02/03/2026,Yes
+Pay March rent,Bank transfer to landlord,Finance,High,02/03/2026,Yes
+Buy coffee beans,1kg dark roast from the local roaster,Shopping,Low,03/03/2026,Yes
+Final review of Q1 report,Proofread and send to management,Work,High,05/03/2026,Yes
+Book hotel for conference,Reserve room for April developer conference,Work,Medium,05/03/2026,Yes
+Monthly savings transfer,Move surplus to ISA,Finance,Medium,05/03/2026,Yes
+Run 10km race pace,Final long run before taper week,Health,High,07/03/2026,Yes
+Grocery shop and meal prep,Weekly shop and batch cook for the week,Shopping,Low,08/03/2026,Yes
+Update project documentation,Write up architecture decisions from Q1,Work,Medium,09/03/2026,Yes
+Review March budget,Check spending so far and adjust forecast,Finance,Low,10/03/2026,Yes
