@@ -158,6 +158,10 @@ class TodoApp:
         )
         self.add_btn.pack(side=tk.RIGHT, padx=(0, 2))
 
+        # ── User chip (only when logged in) ─────────
+        if self.username:
+            self._build_user_chip()
+
         # ── Header separator ────────────────────────
         self.sep1 = tk.Frame(self.root, height=1)
         self.sep1.pack(fill=tk.X)
@@ -707,6 +711,11 @@ class TodoApp:
         )
         self._bind_hover(self.add_btn, lambda: True)
 
+        # Rebuild user chip for new theme colours
+        if self.username and hasattr(self, "_user_chip"):
+            self._user_chip.destroy()
+            self._build_user_chip()
+
         # Separators
         for sep in [self.sep1, self.sep2, self.sep3]:
             sep.configure(bg=t["border"])
@@ -929,6 +938,262 @@ class TodoApp:
     # ═══════════════════════════════════════════════
     #  CATEGORIES
     # ═══════════════════════════════════════════════
+
+    def _build_user_chip(self):
+        """Build the username/email chip in the header (right of Add Task)."""
+        from core.auth import get_user_info
+        t    = DARK_THEME if self.dark_mode else LIGHT_THEME
+        info = get_user_info(self.username)
+
+        chip = tk.Frame(self.header_frame, bg=t["surface"],
+                        cursor="hand2")
+        chip.pack(side=tk.RIGHT, padx=(0, 10))
+        chip.bind("<Button-1>", lambda e: self.open_user_settings())
+
+        # Avatar circle (initials)
+        initial = info["display_name"][0].upper() if info["display_name"] else "?"
+        av = tk.Label(chip, text=initial,
+                      font=("TkDefaultFont", 11, "bold"),
+                      bg=t["accent"], fg=t["accent_fg"],
+                      width=2, relief="flat")
+        av.pack(side=tk.LEFT, padx=(6, 4), pady=4)
+        av.bind("<Button-1>", lambda e: self.open_user_settings())
+
+        # Text block
+        text_block = tk.Frame(chip, bg=t["surface"])
+        text_block.pack(side=tk.LEFT, padx=(0, 8), pady=4)
+        text_block.bind("<Button-1>", lambda e: self.open_user_settings())
+
+        name_lbl = tk.Label(text_block, text=info["display_name"],
+                            font=("TkDefaultFont", 10, "bold"),
+                            bg=t["surface"], fg=t["fg"], cursor="hand2")
+        name_lbl.pack(anchor="w")
+        name_lbl.bind("<Button-1>", lambda e: self.open_user_settings())
+
+        email_lbl = tk.Label(text_block,
+                             text=info["email"] or "",
+                             font=("TkDefaultFont", 8),
+                             bg=t["surface"], fg=t["muted_fg"], cursor="hand2")
+        email_lbl.pack(anchor="w")
+        email_lbl.bind("<Button-1>", lambda e: self.open_user_settings())
+
+        self._user_chip = chip
+
+    def open_user_settings(self):
+        """User profile / account settings dialog."""
+        from core.auth import (get_user_info, update_username,
+                               update_email, update_password)
+        from gui.login import _load_remembered, _save_remembered, _clear_remembered
+
+        t   = DARK_THEME if self.dark_mode else LIGHT_THEME
+        top = self._make_dialog("Account Settings")
+        top.resizable(False, False)
+        top.geometry("400x560")
+
+        # ── Header ────────────────────────────────────
+        hdr = tk.Frame(top, bg=t["surface"])
+        hdr.pack(fill=tk.X)
+        info    = get_user_info(self.username)
+        initial = info["display_name"][0].upper() if info["display_name"] else "?"
+
+        av = tk.Label(hdr, text=initial,
+                      font=("TkDefaultFont", 22, "bold"),
+                      bg=t["accent"], fg=t["accent_fg"],
+                      width=2)
+        av.pack(side=tk.LEFT, padx=(18, 12), pady=14)
+
+        title_block = tk.Frame(hdr, bg=t["surface"])
+        title_block.pack(side=tk.LEFT, pady=14)
+        tk.Label(title_block, text=info["display_name"],
+                 font=("TkDefaultFont", 13, "bold"),
+                 bg=t["surface"], fg=t["fg"]).pack(anchor="w")
+        tk.Label(title_block, text=info["email"] or "",
+                 font=("TkDefaultFont", 9),
+                 bg=t["surface"], fg=t["muted_fg"]).pack(anchor="w")
+
+        tk.Frame(top, height=1, bg=t["border"]).pack(fill=tk.X)
+
+        # ── Scrollable body ───────────────────────────
+        canvas_frame = tk.Frame(top, bg=t["bg"])
+        canvas_frame.pack(fill=tk.BOTH, expand=True)
+
+        canvas = tk.Canvas(canvas_frame, bg=t["bg"], highlightthickness=0, bd=0)
+        scrollbar = ttk.Scrollbar(canvas_frame, orient="vertical",
+                                  command=canvas.yview, style="Flat.Vertical.TScrollbar")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        pad = tk.Frame(canvas, bg=t["bg"])
+        pad_win = canvas.create_window((0, 0), window=pad, anchor="nw")
+
+        def _on_canvas_resize(e):
+            canvas.itemconfig(pad_win, width=e.width)
+        def _on_pad_resize(e):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        canvas.bind("<Configure>", _on_canvas_resize)
+        pad.bind("<Configure>", _on_pad_resize)
+
+        def _mousewheel(e):
+            canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+        canvas.bind("<Enter>", lambda e: canvas.bind_all("<MouseWheel>", _mousewheel))
+        canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
+
+        inner = tk.Frame(pad, bg=t["bg"])
+        inner.pack(fill=tk.BOTH, expand=True, padx=24, pady=10)
+
+        def section(label):
+            tk.Label(inner, text=label,
+                     font=("TkDefaultFont", 9, "bold"),
+                     bg=t["bg"], fg=t["muted_fg"]).pack(anchor="w", pady=(14, 4))
+            tk.Frame(inner, height=1, bg=t["border"]).pack(fill=tk.X, pady=(0, 8))
+
+        def field(parent, label):
+            tk.Label(parent, text=label,
+                     font=("TkDefaultFont", 9),
+                     bg=t["bg"], fg=t["muted_fg"]).pack(anchor="w")
+            var = tk.StringVar()
+            e = tk.Entry(parent, textvariable=var,
+                         bg=t["entry_bg"], fg=t["fg"],
+                         insertbackground=t["fg"],
+                         relief=tk.FLAT, font=("TkDefaultFont", 10),
+                         highlightthickness=1,
+                         highlightbackground=t["border"],
+                         highlightcolor=t["accent"])
+            e.pack(fill=tk.X, pady=(3, 8))
+            return var, e
+
+        def pw_field(parent, label):
+            tk.Label(parent, text=label,
+                     font=("TkDefaultFont", 9),
+                     bg=t["bg"], fg=t["muted_fg"]).pack(anchor="w")
+            var = tk.StringVar()
+            e = tk.Entry(parent, textvariable=var, show="●",
+                         bg=t["entry_bg"], fg=t["fg"],
+                         insertbackground=t["fg"],
+                         relief=tk.FLAT, font=("TkDefaultFont", 10),
+                         highlightthickness=1,
+                         highlightbackground=t["border"],
+                         highlightcolor=t["accent"])
+            e.pack(fill=tk.X, pady=(3, 8))
+            return var
+
+        def msg_label(parent):
+            v = tk.StringVar()
+            err_color = "#F87171" if self.dark_mode else "#DC2626"
+            tk.Label(parent, textvariable=v,
+                     font=("TkDefaultFont", 9),
+                     bg=t["bg"], fg=err_color,
+                     wraplength=330).pack(anchor="w", pady=(0, 4))
+            return v
+
+        def save_btn(parent, text, cmd):
+            b = tk.Button(parent, text=text, command=cmd,
+                          bg=t["accent"], fg=t["accent_fg"],
+                          activebackground=t["accent_hover"],
+                          activeforeground=t["accent_fg"],
+                          relief=tk.FLAT, cursor="hand2",
+                          font=("TkDefaultFont", 9, "bold"))
+            b.pack(anchor="e", pady=(0, 4))
+            return b
+
+        # ── Change username ───────────────────────────
+        section("USERNAME")
+        uname_var, uname_entry = field(inner, "New username")
+        uname_entry.insert(0, info["display_name"])
+        uname_msg = msg_label(inner)
+
+        def _do_update_username():
+            ok, val = update_username(self.username, uname_var.get())
+            if ok:
+                self.username = val
+                self.root.title(f"My Tasks — {val}")
+                if hasattr(self, "_user_chip"):
+                    self._user_chip.destroy()
+                self._build_user_chip()
+                uname_msg.set("✓ Username updated.")
+                top.after(1500, lambda: uname_msg.set(""))
+            else:
+                uname_msg.set(val)
+
+        save_btn(inner, "Update username", _do_update_username)
+
+        # ── Change email ──────────────────────────────
+        section("EMAIL")
+        email_var, _ = field(inner, "New email address")
+        email_var.set(info["email"] or "")
+        email_msg = msg_label(inner)
+
+        def _do_update_email():
+            ok, msg = update_email(self.username, email_var.get())
+            if ok:
+                if hasattr(self, "_user_chip"):
+                    self._user_chip.destroy()
+                self._build_user_chip()
+                email_msg.set("✓ Email updated.")
+                top.after(1500, lambda: email_msg.set(""))
+            else:
+                email_msg.set(msg)
+
+        save_btn(inner, "Update email", _do_update_email)
+
+        # ── Change password ───────────────────────────
+        section("PASSWORD")
+        cur_pw  = pw_field(inner, "Current password")
+        new_pw  = pw_field(inner, "New password")
+        conf_pw = pw_field(inner, "Confirm new password")
+        pw_msg  = msg_label(inner)
+
+        def _do_update_pw():
+            if new_pw.get() != conf_pw.get():
+                pw_msg.set("New passwords do not match.")
+                return
+            ok, msg = update_password(self.username, cur_pw.get(), new_pw.get())
+            if ok:
+                cur_pw.set(""); new_pw.set(""); conf_pw.set("")
+                pw_msg.set("✓ Password updated.")
+                top.after(1500, lambda: pw_msg.set(""))
+            else:
+                pw_msg.set(msg)
+
+        save_btn(inner, "Update password", _do_update_pw)
+
+        # ── Remember me toggle ────────────────────────
+        section("SESSION")
+        remembered = _load_remembered()
+        remember_var = tk.BooleanVar(value=bool(remembered.get("identifier")))
+
+        def _on_remember_toggle():
+            if remember_var.get():
+                _save_remembered(self.username)
+            else:
+                _clear_remembered()
+
+        tk.Checkbutton(
+            inner,
+            variable=remember_var,
+            text="Remember me on this device",
+            font=("TkDefaultFont", 10),
+            bg=t["bg"], fg=t["fg"],
+            selectcolor=t["entry_bg"],
+            activebackground=t["bg"],
+            activeforeground=t["fg"],
+            cursor="hand2", relief=tk.FLAT, bd=0,
+            command=_on_remember_toggle,
+        ).pack(anchor="w", pady=(0, 16))
+
+        # ── Close button ──────────────────────────────
+        tk.Frame(top, height=1, bg=t["border"]).pack(fill=tk.X)
+        foot = tk.Frame(top, bg=t["surface"], height=60)
+        foot.pack(fill=tk.X, side=tk.BOTTOM)
+        foot.pack_propagate(False)
+        tk.Button(foot, text="Close", command=top.destroy,
+                  relief="flat", cursor="hand2",
+                  bg=t["accent"], fg=t["accent_fg"],
+                  activebackground=t["accent_hover"],
+                  activeforeground=t["accent_fg"],
+                  font=("TkDefaultFont", 11, "bold")
+                  ).place(x=18, y=10, relwidth=1.0, width=-36, height=40)
 
     def _build_category_filter_buttons(self):
         """(Re)build the category pill buttons in the sidebar."""

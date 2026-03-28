@@ -3,8 +3,12 @@ login.py — Login / Register window for My Tasks.
 Call LoginWindow(root).run() → returns display_name string or None if cancelled.
 """
 
+import json
+import os
 import tkinter as tk
 from core.auth import verify_user, register_user
+
+_REMEMBER_FILE = "data/remember.json"
 
 _DARK = {
     "bg":        "#13151A",
@@ -19,6 +23,7 @@ _DARK = {
     "entry_bg":  "#22262F",
     "error":     "#F87171",
     "success":   "#4ADE80",
+    "check_bg":  "#22262F",
 }
 _LIGHT = {
     "bg":        "#FAF7F2",
@@ -33,17 +38,45 @@ _LIGHT = {
     "entry_bg":  "#FFFFFF",
     "error":     "#DC2626",
     "success":   "#16A34A",
+    "check_bg":  "#F2EDE6",
 }
 
 
+# ── Remember-me helpers ───────────────────────────────────────────────────────
+
+def _load_remembered() -> dict:
+    """Return {identifier, remember} or empty dict."""
+    try:
+        with open(_REMEMBER_FILE) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_remembered(identifier: str):
+    os.makedirs(os.path.dirname(_REMEMBER_FILE), exist_ok=True)
+    with open(_REMEMBER_FILE, "w") as f:
+        json.dump({"identifier": identifier}, f)
+
+
+def _clear_remembered():
+    try:
+        os.remove(_REMEMBER_FILE)
+    except FileNotFoundError:
+        pass
+
+
+# ── Login window ──────────────────────────────────────────────────────────────
+
 class LoginWindow:
-    W, H = 380, 500
+    W, H = 380, 520
 
     def __init__(self, root: tk.Tk, dark_mode: bool = True):
         self.root      = root
         self.dark_mode = dark_mode
         self.result    = None
         self._mode     = "login"
+        self._remembered = _load_remembered()
 
         self.top = tk.Toplevel(root)
         self.top.title("My Tasks — Sign in")
@@ -110,14 +143,35 @@ class LoginWindow:
         self._pw_entry = self._entry(self.form_frame, self.password_var, t, show="●")
         self._pw_entry.pack(fill=tk.X, pady=(3, 0))
 
+        # Show / hide password
         self._show_pw = False
         self._eye_btn = tk.Button(self.form_frame, text="Show",
                                   font=("TkDefaultFont", 8),
                                   bg=t["bg"], fg=t["muted_fg"],
                                   relief=tk.FLAT, cursor="hand2", bd=0,
                                   command=self._toggle_show_pw)
-        self._eye_btn.pack(anchor="e", pady=(2, 10))
+        self._eye_btn.pack(anchor="e", pady=(2, 6))
 
+        # ── Remember me ───────────────────────────────
+        remember_row = tk.Frame(self.form_frame, bg=t["bg"])
+        remember_row.pack(anchor="w", pady=(0, 8))
+
+        self._remember_var = tk.BooleanVar(value=bool(self._remembered))
+        cb = tk.Checkbutton(
+            remember_row,
+            variable=self._remember_var,
+            text="Remember me",
+            font=("TkDefaultFont", 9),
+            bg=t["bg"], fg=t["muted_fg"],
+            selectcolor=t["check_bg"],
+            activebackground=t["bg"],
+            activeforeground=t["fg"],
+            cursor="hand2",
+            relief=tk.FLAT, bd=0,
+        )
+        cb.pack(side=tk.LEFT)
+
+        # ── Error message ─────────────────────────────
         self.msg_var = tk.StringVar()
         tk.Label(self.form_frame, textvariable=self.msg_var,
                  font=("TkDefaultFont", 9), bg=t["bg"], fg=t["error"],
@@ -142,16 +196,21 @@ class LoginWindow:
                   relief=tk.FLAT, cursor="hand2", bd=0,
                   command=self._switch_to_register).pack()
 
+        # Pre-fill remembered identifier
+        if self._remembered.get("identifier"):
+            self.login_var.set(self._remembered["identifier"])
+            self._pw_entry.focus_set()
+        else:
+            self._login_entry.focus_set()
+
         self.top.bind("<Return>", lambda e: self._do_login())
-        self._login_entry.focus_set()
 
     def _build_register_form(self, t):
         self._clear_form()
 
-        # Taller window for registration
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
-        self.top.geometry(f"{self.W}x540+{(sw-self.W)//2}+{(sh-540)//2}")
+        self.top.geometry(f"{self.W}x560+{(sw-self.W)//2}+{(sh-560)//2}")
 
         tk.Label(self.form_frame, text="Create account",
                  font=("TkDefaultFont", 13, "bold"),
@@ -201,7 +260,7 @@ class LoginWindow:
         self.top.bind("<Return>", lambda e: self._do_register())
         self._username_entry.focus_set()
 
-    # ── Helpers ───────────────────────────────────────────────────────────────
+    # ── Widget helpers ────────────────────────────────────────────────────────
 
     def _entry(self, parent, var, t, show=""):
         return tk.Entry(parent, textvariable=var, show=show,
@@ -237,6 +296,11 @@ class LoginWindow:
             return
         ok, val = verify_user(identifier, password)
         if ok:
+            # Save or clear remember-me
+            if self._remember_var.get():
+                _save_remembered(identifier)
+            else:
+                _clear_remembered()
             self.result = val
             self.top.grab_release()
             self.top.destroy()
@@ -274,7 +338,6 @@ class LoginWindow:
 
     def _switch_to_login(self):
         self._mode = "login"
-        # Restore original height
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
         self.top.geometry(f"{self.W}x{self.H}+{(sw-self.W)//2}+{(sh-self.H)//2}")

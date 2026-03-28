@@ -130,3 +130,67 @@ def get_display_name(username: str) -> str:
     users = _load_users()
     key   = username.strip().lower()
     return users.get(key, {}).get("display_name", username)
+
+
+def get_user_info(username: str) -> dict:
+    """Return {display_name, email} for the given username key."""
+    users = _load_users()
+    key   = username.strip().lower()
+    rec   = users.get(key, {})
+    return {
+        "display_name": rec.get("display_name", username),
+        "email":        rec.get("email", ""),
+    }
+
+
+def update_username(old_username: str, new_username: str) -> tuple:
+    """Rename a user. Returns (ok, message)."""
+    new_username = new_username.strip()
+    if not new_username or len(new_username) < 3:
+        return False, "Username must be at least 3 characters."
+    users   = _load_users()
+    old_key = old_username.strip().lower()
+    new_key = new_username.lower()
+    if old_key not in users:
+        return False, "User not found."
+    if new_key != old_key and new_key in users:
+        return False, "Username already taken."
+    rec = users.pop(old_key)
+    rec["display_name"] = new_username
+    users[new_key] = rec
+    _save_users(users)
+    return True, new_username   # return new display_name
+
+
+def update_email(username: str, new_email: str) -> tuple:
+    """Change email. Returns (ok, message)."""
+    new_email = new_email.strip().lower()
+    if not _is_valid_email(new_email):
+        return False, "Please enter a valid email address."
+    users = _load_users()
+    key   = username.strip().lower()
+    if key not in users:
+        return False, "User not found."
+    # Check duplicate (ignore own email)
+    for k, rec in users.items():
+        if k != key and rec.get("email", "").lower() == new_email:
+            return False, "That email is already in use."
+    users[key]["email"] = new_email
+    _save_users(users)
+    return True, "Email updated."
+
+
+def update_password(username: str, current_pw: str, new_pw: str) -> tuple:
+    """Change password after verifying current one. Returns (ok, message)."""
+    if len(new_pw) < 6:
+        return False, "New password must be at least 6 characters."
+    ok, _ = verify_user(username, current_pw)
+    if not ok:
+        return False, "Current password is incorrect."
+    users = _load_users()
+    key   = username.strip().lower()
+    hash_hex, salt = _hash_password(new_pw)
+    users[key]["hash"] = hash_hex
+    users[key]["salt"] = salt
+    _save_users(users)
+    return True, "Password updated."
