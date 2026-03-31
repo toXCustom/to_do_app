@@ -210,46 +210,146 @@ class LoginWindow:
 
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
-        self.top.geometry(f"{self.W}x560+{(sw-self.W)//2}+{(sh-560)//2}")
+        self.top.geometry(f"{self.W}x640+{(sw-self.W)//2}+{(sh-640)//2}")
 
         tk.Label(self.form_frame, text="Create account",
                  font=("TkDefaultFont", 13, "bold"),
-                 bg=t["bg"], fg=t["fg"]).pack(anchor="w", pady=(0, 14))
+                 bg=t["bg"], fg=t["fg"]).pack(anchor="w", pady=(0, 10))
 
-        # Username
+        # ── Username ──────────────────────────────────
         tk.Label(self.form_frame, text="Username",
                  font=("TkDefaultFont", 9), bg=t["bg"], fg=t["muted_fg"]).pack(anchor="w")
         self.username_var = tk.StringVar()
         self._username_entry = self._entry(self.form_frame, self.username_var, t)
-        self._username_entry.pack(fill=tk.X, pady=(3, 10))
+        self._username_entry.pack(fill=tk.X, pady=(3, 2))
+        uname_hint = tk.Label(self.form_frame, text="",
+                              font=("TkDefaultFont", 8),
+                              bg=t["bg"], fg=t["muted_fg"],
+                              anchor="w", justify="left")
+        uname_hint.pack(fill=tk.X, pady=(0, 6))
 
-        # Email
+        def _check_username(*_):
+            v = self.username_var.get()
+            import re as _re
+            if not v:
+                uname_hint.config(text="", fg=t["muted_fg"])
+            elif len(v) < 3:
+                uname_hint.config(text="✗  At least 3 characters", fg="#F87171")
+            elif not _re.match(r"^[a-zA-Z0-9_\-]+$", v):
+                uname_hint.config(text="✗  Letters, numbers, _ and - only", fg="#F87171")
+            elif len(v) > 32:
+                uname_hint.config(text="✗  Maximum 32 characters", fg="#F87171")
+            else:
+                uname_hint.config(text="✓  Looks good", fg="#4ADE80")
+
+        self.username_var.trace_add("write", _check_username)
+
+        # ── Email ─────────────────────────────────────
         tk.Label(self.form_frame, text="Email address",
                  font=("TkDefaultFont", 9), bg=t["bg"], fg=t["muted_fg"]).pack(anchor="w")
         self.email_var = tk.StringVar()
-        self._entry(self.form_frame, self.email_var, t).pack(fill=tk.X, pady=(3, 10))
+        self._entry(self.form_frame, self.email_var, t).pack(fill=tk.X, pady=(3, 2))
+        email_hint = tk.Label(self.form_frame, text="",
+                              font=("TkDefaultFont", 8),
+                              bg=t["bg"], fg=t["muted_fg"])
+        email_hint.pack(anchor="w", pady=(0, 6))
 
-        # Password
+        def _check_email(*_):
+            import re as _re
+            v = self.email_var.get().strip()
+            if not v:
+                email_hint.config(text="")
+            elif _re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", v):
+                email_hint.config(text="✓  Valid email", fg="#4ADE80")
+            else:
+                email_hint.config(text="✗  Enter a valid email address", fg="#F87171")
+
+        self.email_var.trace_add("write", _check_email)
+
+        # ── Password ──────────────────────────────────
         tk.Label(self.form_frame, text="Password",
                  font=("TkDefaultFont", 9), bg=t["bg"], fg=t["muted_fg"]).pack(anchor="w")
         self.password_var = tk.StringVar()
         self._entry(self.form_frame, self.password_var, t, show="●").pack(
-            fill=tk.X, pady=(3, 10))
+            fill=tk.X, pady=(3, 4))
 
-        # Confirm
+        # Strength bar (5 segments)
+        bar_frame = tk.Frame(self.form_frame, bg=t["bg"])
+        bar_frame.pack(fill=tk.X, pady=(0, 2))
+        _segs = []
+        for _ in range(5):
+            s = tk.Frame(bar_frame, height=4, bg=t["border"])
+            s.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 2))
+            _segs.append(s)
+        strength_lbl = tk.Label(self.form_frame, text="",
+                                font=("TkDefaultFont", 8),
+                                bg=t["bg"], fg=t["muted_fg"])
+        strength_lbl.pack(anchor="w", pady=(0, 6))
+
+        def _pw_strength(pw: str) -> int:
+            """Return score 0-5."""
+            import re as _re
+            score = 0
+            if len(pw) >= 8:  score += 1
+            if len(pw) >= 12: score += 1
+            if _re.search(r"[A-Z]", pw): score += 1
+            if _re.search(r"[0-9]", pw): score += 1
+            if _re.search(r"[^a-zA-Z0-9]", pw): score += 1
+            return score
+
+        _STRENGTH_COLORS = ["#F87171", "#FB923C", "#FACC15", "#86EFAC", "#4ADE80"]
+        _STRENGTH_LABELS = ["Very weak", "Weak", "Fair", "Strong", "Very strong"]
+
+        def _check_password(*_):
+            pw    = self.password_var.get()
+            score = _pw_strength(pw) if pw else 0
+            for i, seg in enumerate(_segs):
+                if pw and i < score:
+                    seg.config(bg=_STRENGTH_COLORS[min(score - 1, 4)])
+                else:
+                    seg.config(bg=t["border"])
+            if pw:
+                strength_lbl.config(
+                    text=_STRENGTH_LABELS[min(score - 1, 4)] if score > 0 else "Too short",
+                    fg=_STRENGTH_COLORS[min(score - 1, 4)] if score > 0 else "#F87171"
+                )
+            else:
+                strength_lbl.config(text="")
+            _check_confirm()
+
+        self.password_var.trace_add("write", _check_password)
+
+        # ── Confirm password ──────────────────────────
         tk.Label(self.form_frame, text="Confirm password",
                  font=("TkDefaultFont", 9), bg=t["bg"], fg=t["muted_fg"]).pack(anchor="w")
         self.confirm_var = tk.StringVar()
         self._entry(self.form_frame, self.confirm_var, t, show="●").pack(
-            fill=tk.X, pady=(3, 8))
+            fill=tk.X, pady=(3, 2))
+        confirm_hint = tk.Label(self.form_frame, text="",
+                                font=("TkDefaultFont", 8),
+                                bg=t["bg"], fg=t["muted_fg"])
+        confirm_hint.pack(anchor="w", pady=(0, 6))
 
+        def _check_confirm(*_):
+            pw = self.password_var.get()
+            cf = self.confirm_var.get()
+            if not cf:
+                confirm_hint.config(text="")
+            elif pw == cf:
+                confirm_hint.config(text="✓  Passwords match", fg="#4ADE80")
+            else:
+                confirm_hint.config(text="✗  Passwords do not match", fg="#F87171")
+
+        self.confirm_var.trace_add("write", _check_confirm)
+
+        # ── Error / submit ────────────────────────────
         self.msg_var = tk.StringVar()
         tk.Label(self.form_frame, textvariable=self.msg_var,
-                 font=("TkDefaultFont", 9), bg=t["bg"], fg=t["error"],
-                 wraplength=300, justify="left").pack(anchor="w", pady=(0, 8))
+                 font=("TkDefaultFont", 9), bg=t["bg"], fg="#F87171",
+                 wraplength=300, justify="left").pack(anchor="w", pady=(0, 6))
 
         self._accent_btn(self.form_frame, "Create account", self._do_register, t).pack(
-            fill=tk.X, ipady=6, pady=(0, 12))
+            fill=tk.X, ipady=6, pady=(0, 10))
 
         tk.Button(self.form_frame, text="← Back to sign in",
                   font=("TkDefaultFont", 9, "underline"),

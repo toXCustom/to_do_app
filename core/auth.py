@@ -82,14 +82,18 @@ def register_user(username: str, email: str, password: str):
         return False, "Username cannot be empty."
     if len(username) < 3:
         return False, "Username must be at least 3 characters."
+    if len(username) > 32:
+        return False, "Username must be 32 characters or fewer."
+    if not re.match(r"^[a-zA-Z0-9_\-]+$", username):
+        return False, "Username may only contain letters, numbers, _ and -."
     if not email:
         return False, "Email cannot be empty."
     if not _is_valid_email(email):
         return False, "Please enter a valid email address."
     if not password:
         return False, "Password cannot be empty."
-    if len(password) < 6:
-        return False, "Password must be at least 6 characters."
+    if len(password) < 8:
+        return False, "Password must be at least 8 characters."
 
     users = _load_users()
     if username.lower() in users:
