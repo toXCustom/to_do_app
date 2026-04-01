@@ -102,11 +102,13 @@ def register_user(username: str, email: str, password: str):
         return False, "An account with that email already exists."
 
     hash_hex, salt = _hash_password(password)
+    enc_salt = secrets.token_hex(16)
     users[username.lower()] = {
         "display_name": username,
         "email":        email.lower(),
         "hash":         hash_hex,
         "salt":         salt,
+        "enc_salt":     enc_salt,
     }
     _save_users(users)
     return True, "Account created successfully."
@@ -198,3 +200,35 @@ def update_password(username: str, current_pw: str, new_pw: str) -> tuple:
     users[key]["salt"] = salt
     _save_users(users)
     return True, "Password updated."
+
+
+# ── Encryption key derivation ─────────────────────────────────────────────────
+
+def get_encryption_key(username: str, password: str) -> bytes | None:
+    """
+    Derive a 32-byte Fernet-compatible encryption key from the user's password.
+    Uses a dedicated enc_salt stored alongside the password hash.
+    Returns the URL-safe base64-encoded key (44 bytes), or None if user not found.
+    """
+    import base64 as _b64
+    users = _load_users()
+    key   = username.strip().lower()
+    if key not in users:
+        return None
+    rec = users[key]
+
+    # Create enc_salt on first call (old accounts won't have it yet)
+    if "enc_salt" not in rec:
+        rec["enc_salt"] = secrets.token_hex(16)
+        _save_users(users)
+
+    enc_salt = rec["enc_salt"].encode("utf-8")
+    derived  = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        enc_salt,
+        iterations=260_000,
+        dklen=32,
+    )
+    # Fernet requires a URL-safe base64-encoded 32-byte key
+    return _b64.urlsafe_b64encode(derived)

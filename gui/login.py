@@ -6,7 +6,7 @@ Call LoginWindow(root).run() → returns display_name string or None if cancelle
 import json
 import os
 import tkinter as tk
-from core.auth import verify_user, register_user
+from core.auth import verify_user, register_user, get_encryption_key, _find_by_login, _load_users
 
 _REMEMBER_FILE = "data/remember.json"
 
@@ -396,12 +396,15 @@ class LoginWindow:
             return
         ok, val = verify_user(identifier, password)
         if ok:
-            # Save or clear remember-me
+            # Resolve identifier → username key for key derivation
+            users    = _load_users()
+            ukey     = _find_by_login(identifier, users)
+            enc_key  = get_encryption_key(ukey, password) if ukey else None
             if self._remember_var.get():
                 _save_remembered(identifier)
             else:
                 _clear_remembered()
-            self.result = val
+            self.result = (val, enc_key)
             self.top.grab_release()
             self.top.destroy()
         else:
@@ -421,7 +424,8 @@ class LoginWindow:
         ok, msg = register_user(username, email, password)
         if ok:
             _, display = verify_user(username, password)
-            self.result = display
+            enc_key    = get_encryption_key(username.lower(), password)
+            self.result = (display, enc_key)
             self.top.grab_release()
             self.top.destroy()
         else:
@@ -457,5 +461,8 @@ class LoginWindow:
         self.top.destroy()
 
     def run(self):
+        """Block until login/register completes. Returns (display_name, enc_key) or (None, None)."""
         self.root.wait_window(self.top)
-        return self.result
+        if self.result:
+            return self.result
+        return (None, None)

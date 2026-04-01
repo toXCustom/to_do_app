@@ -1,4 +1,8 @@
 import os
+import sys
+# Ensure project root is on the path when this file is run directly
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import webbrowser
 import tkinter as tk
 import tkinter.ttk as ttk
@@ -66,9 +70,10 @@ DARK_THEME = {
 
 
 class TodoApp:
-    def __init__(self, root, username: str = ""):
+    def __init__(self, root, username: str = "", enc_key: bytes = None):
         self.root     = root
-        self.username = username   # display name of logged-in user
+        self.username = username
+        self.enc_key  = enc_key   # session encryption key (in-memory only)   # display name of logged-in user
         self.root.title(f"My Tasks — {username}" if username else "My Tasks")
         self.root.minsize(720, 480)
         config = load_config(username)
@@ -78,7 +83,7 @@ class TodoApp:
 
         # Task manager
         self.manager = TaskManager()
-        load_tasks(self.manager, username)
+        load_tasks(self.manager, username, enc_key)
 
         # State
         config = load_config(username)
@@ -1150,9 +1155,13 @@ class TodoApp:
                 return
             ok, msg = update_password(self.username, cur_pw.get(), new_pw.get())
             if ok:
+                # Re-derive session key with new password and re-encrypt tasks
+                from core.auth import get_encryption_key as _gek
+                self.enc_key = _gek(self.username.strip().lower(), new_pw.get())
+                save_tasks(self.manager, self.username, self.enc_key)
                 cur_pw.set(""); new_pw.set(""); conf_pw.set("")
-                pw_msg.set("✓ Password updated.")
-                top.after(1500, lambda: pw_msg.set(""))
+                pw_msg.set("✓ Password updated. Tasks re-encrypted.")
+                top.after(2000, lambda: pw_msg.set(""))
             else:
                 pw_msg.set(msg)
 
@@ -1412,7 +1421,7 @@ class TodoApp:
                 existing_names.add(name.lower())
                 added += 1
 
-            save_tasks(self.manager, self.username)
+            save_tasks(self.manager, self.username, self.enc_key)
             self.refresh_tasks()
 
             parts = [f"{added} imported"]
@@ -2107,7 +2116,7 @@ class TodoApp:
                 self.history.execute(cmd)
             self.refresh_tasks()
             self._update_undo_redo_buttons()
-            save_tasks(self.manager, self.username)
+            save_tasks(self.manager, self.username, self.enc_key)
             top.destroy()
 
         tk.Button(
@@ -2203,7 +2212,7 @@ class TodoApp:
             task_to_edit.update_status()
             self.refresh_tasks()
             self._update_undo_redo_buttons()
-            save_tasks(self.manager, self.username)
+            save_tasks(self.manager, self.username, self.enc_key)
             top.destroy()
 
         tk.Button(
@@ -2225,7 +2234,7 @@ class TodoApp:
             self.history.execute(cmd)
             self.refresh_tasks()
             self._update_undo_redo_buttons()
-            save_tasks(self.manager, self.username)
+            save_tasks(self.manager, self.username, self.enc_key)
 
     def mark_done_gui(self):
         selected = self.task_tree.selection()
@@ -2238,7 +2247,7 @@ class TodoApp:
             self.history.execute(cmd)
             self.refresh_tasks()
             self._update_undo_redo_buttons()
-            save_tasks(self.manager, self.username)
+            save_tasks(self.manager, self.username, self.enc_key)
 
     # ═══════════════════════════════════════════════
     #  DIALOG WIDGET HELPERS
@@ -2535,7 +2544,7 @@ class TodoApp:
                 self.history.execute(cmd)
                 self.refresh_tasks()
                 self._update_undo_redo_buttons()
-                save_tasks(self.manager, self.username)
+                save_tasks(self.manager, self.username, self.enc_key)
             return "break"   # prevent default selection behaviour on this column
 
     def get_task_from_selection(self, item_id):
@@ -2990,14 +2999,14 @@ class TodoApp:
         if desc:
             self.refresh_tasks()
             self._update_undo_redo_buttons()
-            save_tasks(self.manager, self.username)
+            save_tasks(self.manager, self.username, self.enc_key)
 
     def redo_action(self):
         desc = self.history.redo()
         if desc:
             self.refresh_tasks()
             self._update_undo_redo_buttons()
-            save_tasks(self.manager, self.username)
+            save_tasks(self.manager, self.username, self.enc_key)
 
     def _update_undo_redo_buttons(self):
         t = DARK_THEME if self.dark_mode else LIGHT_THEME
@@ -3021,7 +3030,7 @@ class TodoApp:
             lambda: self.history.redo_label() if self.history.can_redo() else "")
 
     def auto_save(self):
-        save_tasks(self.manager, self.username)
+        save_tasks(self.manager, self.username, self.enc_key)
         self.save_ui_config()   # persists geometry on every auto-save tick
         self.root.after(10000, self.auto_save)
 
@@ -3128,6 +3137,6 @@ class TodoApp:
                 pass
         if hasattr(self, "_reminder_svc"):
             self._reminder_svc.stop()
-        save_tasks(self.manager, self.username)
+        save_tasks(self.manager, self.username, self.enc_key)
         self.save_ui_config()
         self.root.destroy()

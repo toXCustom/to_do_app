@@ -46,12 +46,12 @@ if __name__ == "__main__":
 
     dark = _detect_theme()
 
-    lw       = LoginWindow(root, dark_mode=dark)
-    username = lw.run()
+    lw               = LoginWindow(root, dark_mode=dark)
+    username, enc_key = lw.run()
 
     if not username:
         root.destroy()
     else:
         root.deiconify()
-        app = TodoApp(root, username=username)
+        app = TodoApp(root, username=username, enc_key=enc_key)
         root.mainloop()
