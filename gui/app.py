@@ -2093,6 +2093,12 @@ class TodoApp:
 
         self._btn(form, t, "Select Date", select_due).grid(row=5, column=0, sticky="e", padx=10, pady=4)
 
+        tk.Label(form, text="Recurrence:", **self._lbl(t)).grid(row=6, column=0, sticky="e", padx=10, pady=8)
+        recur_var = tk.StringVar(value="None")
+        recur_menu = tk.OptionMenu(form, recur_var, "None", "Daily", "Weekly", "Monthly")
+        recur_menu.configure(bg=t["surface2"], fg=t["fg"], activebackground=t["border"], relief="flat")
+        recur_menu.grid(row=6, column=1, sticky="w", padx=10, pady=8)
+
         def confirm():
             name = name_entry.get().strip()
             if not name:
@@ -2105,10 +2111,12 @@ class TodoApp:
                 priority_var.get().split()[-1]
             )
             if task:
-                task.category = cat_var.get()
+                task.category   = cat_var.get()
+                task.recurrence = None if recur_var.get() == "None" else recur_var.get()
             elif self.manager.tasks:
                 task = self.manager.tasks[-1]
-                task.category = cat_var.get()
+                task.category   = cat_var.get()
+                task.recurrence = None if recur_var.get() == "None" else recur_var.get()
             if task and task in self.manager.tasks:
                 self.manager.tasks.remove(task)
             if task:
@@ -2195,6 +2203,13 @@ class TodoApp:
 
         self._btn(form, t, "Select Date", select_due).grid(row=5, column=0, sticky="e", padx=10, pady=4)
 
+        tk.Label(form, text="Recurrence:", **self._lbl(t)).grid(row=6, column=0, sticky="e", padx=10, pady=8)
+        cur_recur = getattr(task_to_edit, "recurrence", None) or "None"
+        recur_var = tk.StringVar(value=cur_recur)
+        recur_menu = tk.OptionMenu(form, recur_var, "None", "Daily", "Weekly", "Monthly")
+        recur_menu.configure(bg=t["surface2"], fg=t["fg"], activebackground=t["border"], relief="flat")
+        recur_menu.grid(row=6, column=1, sticky="w", padx=10, pady=8)
+
         before_snap = snapshot(task_to_edit)
 
         def confirm():
@@ -2206,6 +2221,7 @@ class TodoApp:
                 "priority":    priority_var.get().split()[-1],
                 "due_date":    datetime.strptime(new_due_str, "%Y-%m-%d").date() if new_due_str else None,
                 "done":        task_to_edit.done,
+                "recurrence":  None if recur_var.get() == "None" else recur_var.get(),
             }
             cmd = EditTaskCommand(task_to_edit, before_snap, after_snap)
             self.history.execute(cmd)
@@ -2245,9 +2261,28 @@ class TodoApp:
         if task:
             cmd = MarkDoneCommand(task, task.done)
             self.history.execute(cmd)
+            # ── Spawn next occurrence for recurring tasks ──
+            if task.done and task.recurrence and task.due_date:
+                next_due = task.next_due_date()
+                if next_due:
+                    self._spawn_recurrence(task, next_due)
             self.refresh_tasks()
             self._update_undo_redo_buttons()
             save_tasks(self.manager, self.username, self.enc_key)
+
+    def _spawn_recurrence(self, source_task, next_due):
+        """Create the next occurrence of a recurring task."""
+        from core.tasks import Task as _Task
+        new_task = _Task(
+            source_task.name,
+            source_task.description,
+            next_due,
+            source_task.priority,
+        )
+        new_task.category   = source_task.category
+        new_task.recurrence = source_task.recurrence
+        cmd = AddTaskCommand(self.manager, new_task)
+        self.history.execute(cmd)
 
     # ═══════════════════════════════════════════════
     #  DIALOG WIDGET HELPERS
@@ -2540,16 +2575,24 @@ class TodoApp:
         if region == "cell" and col == "#1" and row_id:
             task = self.get_task_from_selection(row_id)
             if task:
+                was_done = task.done
                 cmd = ToggleDoneCommand(task)
                 self.history.execute(cmd)
+                # Spawn next occurrence when ticking a recurring task done
+                if not was_done and task.done and task.recurrence and task.due_date:
+                    next_due = task.next_due_date()
+                    if next_due:
+                        self._spawn_recurrence(task, next_due)
                 self.refresh_tasks()
                 self._update_undo_redo_buttons()
                 save_tasks(self.manager, self.username, self.enc_key)
-            return "break"   # prevent default selection behaviour on this column
+            return "break"
 
     def get_task_from_selection(self, item_id):
-        # Done is now col 0; Name is col 1
-        name = self.task_tree.item(item_id, "values")[1]
+        # Done is col 0; Name is col 1 (may have 🔁 badge appended)
+        raw_name = self.task_tree.item(item_id, "values")[1]
+        # Strip recurrence badge if present
+        name = raw_name.split("  🔁")[0].strip()
         for task in self.manager.tasks:
             if task.name == name:
                 return task
@@ -2601,10 +2644,14 @@ class TodoApp:
             days_info = "" if t.done else self._days_info(t)
             checkbox  = "☑" if t.done else "☐"
 
-            category = getattr(t, "category", "General")
+            category   = getattr(t, "category", "General")
+            recurrence = getattr(t, "recurrence", None)
+            RECUR_ICON = {"Daily": "🔁 Daily", "Weekly": "🔁 Weekly", "Monthly": "🔁 Monthly"}
+            display_name = f"{t.name}  {RECUR_ICON[recurrence]}" if recurrence else t.name
+
             row_id = self.task_tree.insert(
                 "", tk.END,
-                values=(checkbox, t.name, category, PRIORITY_ICONS.get(t.priority, t.priority), due_str, days_info, t.description)
+                values=(checkbox, display_name, category, PRIORITY_ICONS.get(t.priority, t.priority), due_str, days_info, t.description)
             )
 
             if t.done:

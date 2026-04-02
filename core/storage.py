@@ -156,6 +156,7 @@ def _populate(manager, data: list):
         )
         task.done         = td.get("done", False)
         task.category     = td.get("category", "General")
+        task.recurrence   = td.get("recurrence", None)
         task.created_at   = td.get("created_at",   datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         task.completed_at = td.get("completed_at", None)
         task.update_status()
