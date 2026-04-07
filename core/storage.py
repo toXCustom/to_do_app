@@ -70,7 +70,7 @@ def _decrypt(token: bytes, enc_key: bytes) -> bytes:
 
 # ── Save / load tasks ─────────────────────────────────────────────────────────
 
-def save_tasks(manager, username=None, enc_key: bytes | None = None):
+def save_tasks(manager, username=None, enc_key=None):
     """
     Serialize tasks to JSON and, if enc_key is provided, encrypt the result.
     Writes to  data/tasks_<user>.enc  (encrypted) or  .json  (plain).
@@ -82,9 +82,10 @@ def save_tasks(manager, username=None, enc_key: bytes | None = None):
             "description":  task.description,
             "due_date":     task.due_date.strftime("%Y-%m-%d") if task.due_date else None,
             "priority":     task.priority,
-            "category":     getattr(task, "category", "General"),
+            "category":     getattr(task, "category",    "General"),
             "done":         task.done,
-            "created_at":   getattr(task, "created_at",   None),
+            "recurrence":   getattr(task, "recurrence",  None),
+            "created_at":   getattr(task, "created_at",  None),
             "completed_at": getattr(task, "completed_at", None),
         })
 
@@ -100,13 +101,18 @@ def save_tasks(manager, username=None, enc_key: bytes | None = None):
         if os.path.exists(plain):
             os.remove(plain)
     else:
+        # No key — save as plain JSON
+        # But if an encrypted file already exists, don't overwrite with plain
+        if username and os.path.exists(tasks_file(username, encrypted=True)):
+            # Skip saving — can't write plain when encrypted file exists
+            return
         path = tasks_file(username, encrypted=False)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             f.write(raw.decode("utf-8"))
 
 
-def load_tasks(manager, username=None, enc_key: bytes | None = None):
+def load_tasks(manager, username=None, enc_key=None):
     """
     Load tasks. Tries encrypted file first, then plain JSON fallback.
     """
@@ -114,7 +120,13 @@ def load_tasks(manager, username=None, enc_key: bytes | None = None):
     plain_path = tasks_file(username, encrypted=False)
 
     # ── 1. Encrypted file ─────────────────────────────
-    if enc_key and enc_path and os.path.exists(enc_path):
+    if enc_path and os.path.exists(enc_path):
+        if not enc_key:
+            # Encrypted file exists but no key (session login) — show warning
+            # and skip loading rather than crash
+            print(f"[storage] WARNING: {enc_path} exists but no enc_key provided. "
+                  "Tasks not loaded — log in with password to decrypt.")
+            return
         with open(enc_path, "rb") as f:
             token = f.read()
         raw = _decrypt(token, enc_key)
@@ -122,7 +134,6 @@ def load_tasks(manager, username=None, enc_key: bytes | None = None):
         return
 
     # ── 2. Legacy plain JSON (migration) ──────────────
-    # Check for anonymous tasks.json migration
     if username and not os.path.exists(plain_path) and os.path.exists("data/tasks.json"):
         import shutil
         shutil.copy("data/tasks.json", plain_path)
@@ -135,8 +146,6 @@ def load_tasks(manager, username=None, enc_key: bytes | None = None):
         except (json.JSONDecodeError, KeyError):
             pass
         return
-
-    # Nothing to load — fresh user
 
 
 def _populate(manager, data: list):

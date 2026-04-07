@@ -7,35 +7,26 @@ import os
 import sys
 import tkinter as tk
 
-# Ensure the project root is on sys.path so all packages resolve correctly
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-# Ensure the data/ directory exists before anything tries to read/write it
 os.makedirs("data", exist_ok=True)
 
 from core.storage import load_config
-from core.auth import get_display_name
+from core.auth import (verify_session, get_encryption_key,
+                       _load_users, _find_by_login)
 from gui.login import LoginWindow, _load_remembered
 from gui.app import TodoApp
 
 
 def _detect_theme() -> bool:
-    """
-    Return the dark_mode bool to use for the login window.
-    Priority: remembered user's config → anonymous config → default True (dark).
-    """
     remembered = _load_remembered()
     identifier = remembered.get("identifier", "")
     if identifier:
-        # Try to resolve identifier to a username key for the config file
-        from core.auth import _load_users, _find_by_login
         users = _load_users()
         key   = _find_by_login(identifier, users)
         if key:
             display = users[key].get("display_name", key)
             cfg = load_config(display)
             return cfg.get("dark_mode", True)
-    # Fall back to anonymous config
     cfg = load_config()
     return cfg.get("dark_mode", True)
 
@@ -44,14 +35,37 @@ if __name__ == "__main__":
     root = tk.Tk()
     root.withdraw()
 
-    dark = _detect_theme()
+    # ── App icon path ─────────────────────────────────
+    _icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.ico")
 
-    lw               = LoginWindow(root, dark_mode=dark)
-    username, enc_key = lw.run()
+    def _set_icon(window):
+        try:
+            window.iconbitmap(_icon_path)
+        except Exception:
+            pass
 
-    if not username:
-        root.destroy()
-    else:
+    # ── Try session auto-login first ──────────────────
+    session = verify_session()
+    if session:
+        username = session["display_name"]
+        enc_key  = session.get("enc_key")
         root.deiconify()
-        app = TodoApp(root, username=username, enc_key=enc_key)
+        _set_icon(root)
+        app = TodoApp(root, username=username, enc_key=enc_key,
+                      _session_info=session)
         root.mainloop()
+    else:
+        # ── Normal login ──────────────────────────────
+        dark = _detect_theme()
+        lw = LoginWindow(root, dark_mode=dark)
+        _set_icon(lw.top)          # icon on the login window itself
+        username, enc_key = lw.run()
+
+        if not username:
+            root.destroy()
+        else:
+            root.deiconify()
+            _set_icon(root)        # icon on the main window in taskbar
+            app = TodoApp(root, username=username, enc_key=enc_key,
+                          _session_info=None)
+            root.mainloop()

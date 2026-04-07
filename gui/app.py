@@ -70,10 +70,12 @@ DARK_THEME = {
 
 
 class TodoApp:
-    def __init__(self, root, username: str = "", enc_key: bytes = None):
-        self.root     = root
-        self.username = username
-        self.enc_key  = enc_key   # session encryption key (in-memory only)   # display name of logged-in user
+    def __init__(self, root, username: str = "", enc_key: bytes = None,
+                 _session_info: dict = None):
+        self.root         = root
+        self.username     = username
+        self.enc_key      = enc_key
+        self._session_info = _session_info   # dict from verify_session() or None   # display name of logged-in user
         self.root.title(f"My Tasks — {username}" if username else "My Tasks")
         self.root.minsize(720, 480)
         config = load_config(username)
@@ -1167,29 +1169,85 @@ class TodoApp:
 
         save_btn(inner, "Update password", _do_update_pw)
 
-        # ── Remember me toggle ────────────────────────
-        section("SESSION")
-        remembered = _load_remembered()
-        remember_var = tk.BooleanVar(value=bool(remembered.get("identifier")))
+        # ── Auto-login / Session ──────────────────────
+        section("AUTO-LOGIN")
 
-        def _on_remember_toggle():
-            if remember_var.get():
-                _save_remembered(self.username)
-            else:
-                _clear_remembered()
+        from core.auth import (verify_session as _vs, create_session as _cs,
+                               revoke_session as _rs, session_days_remaining as _sdr)
 
-        tk.Checkbutton(
-            inner,
-            variable=remember_var,
-            text="Remember me on this device",
-            font=("TkDefaultFont", 10),
-            bg=t["bg"], fg=t["fg"],
-            selectcolor=t["entry_bg"],
-            activebackground=t["bg"],
-            activeforeground=t["fg"],
-            cursor="hand2", relief=tk.FLAT, bd=0,
-            command=_on_remember_toggle,
-        ).pack(anchor="w", pady=(0, 16))
+        sess = _vs()
+        days_left = _sdr()
+
+        # Status label
+        if sess:
+            import datetime as _dt
+            exp = _dt.datetime.fromtimestamp(sess["expiry"]).strftime("%d %b %Y")
+            status_text = f"✓  Active — expires {exp}  ({days_left:.1f} days left)"
+            status_col  = "#4ADE80"
+        else:
+            status_text = "✗  No active session"
+            status_col  = t["muted_fg"]
+
+        status_lbl = tk.Label(inner, text=status_text,
+                              font=("TkDefaultFont", 9),
+                              bg=t["bg"], fg=status_col)
+        status_lbl.pack(anchor="w", pady=(0, 10))
+
+        # Duration selector
+        dur_row = tk.Frame(inner, bg=t["bg"])
+        dur_row.pack(anchor="w", pady=(0, 8))
+        tk.Label(dur_row, text="Keep me logged in for:",
+                 font=("TkDefaultFont", 9), bg=t["bg"], fg=t["muted_fg"]).pack(side=tk.LEFT)
+        _dur_opts = {"1 day": 1, "3 days": 3, "7 days": 7, "14 days": 14, "30 days": 30}
+        # Default to current session length or 7 days
+        _cur_days = sess["days"] if sess else 7
+        _dur_label = next((k for k, v in _dur_opts.items() if v == _cur_days), "7 days")
+        dur_var = tk.StringVar(value=_dur_label)
+        dur_menu = tk.OptionMenu(dur_row, dur_var, *_dur_opts.keys())
+        dur_menu.configure(bg=t["surface2"], fg=t["fg"],
+                          activebackground=t["border"], relief="flat")
+        dur_menu.pack(side=tk.LEFT, padx=(8, 0))
+
+        sess_msg = msg_label(inner)
+
+        def _enable_autologin():
+            ukey = self.username.strip().lower()
+            days = _dur_opts.get(dur_var.get(), 7)
+            _cs(ukey, days=days, enc_key=self.enc_key)
+            _save_remembered(self.username)
+            sess_msg.set(f"✓  Auto-login enabled for {days} day{'s' if days > 1 else ''}.")
+            status_lbl.config(
+                text=f"✓  Active session created  ({days} days)",
+                fg="#4ADE80"
+            )
+            top.after(2000, lambda: sess_msg.set(""))
+
+        def _disable_autologin():
+            _rs()
+            _clear_remembered()
+            sess_msg.set("Session revoked. You'll need to log in next time.")
+            status_lbl.config(text="✗  No active session", fg=t["muted_fg"])
+            top.after(2500, lambda: sess_msg.set(""))
+
+        btn_row = tk.Frame(inner, bg=t["bg"])
+        btn_row.pack(anchor="w", pady=(0, 16))
+
+        tk.Button(btn_row, text="Enable Auto-login",
+                  command=_enable_autologin,
+                  bg=t["accent"], fg=t["accent_fg"],
+                  activebackground=t["accent_hover"],
+                  activeforeground=t["accent_fg"],
+                  relief=tk.FLAT, cursor="hand2",
+                  font=("TkDefaultFont", 9, "bold"),
+                  padx=10, pady=4).pack(side=tk.LEFT, padx=(0, 8))
+
+        tk.Button(btn_row, text="Sign Out",
+                  command=_disable_autologin,
+                  bg=t["surface2"], fg=t["fg"],
+                  activebackground=t["border"],
+                  relief=tk.FLAT, cursor="hand2",
+                  font=("TkDefaultFont", 9),
+                  padx=10, pady=4).pack(side=tk.LEFT)
 
         # ── Close button ──────────────────────────────
         tk.Frame(top, height=1, bg=t["border"]).pack(fill=tk.X)

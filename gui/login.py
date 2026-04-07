@@ -6,7 +6,9 @@ Call LoginWindow(root).run() → returns display_name string or None if cancelle
 import json
 import os
 import tkinter as tk
-from core.auth import verify_user, register_user, get_encryption_key, _find_by_login, _load_users
+from core.auth import (verify_user, register_user, get_encryption_key,
+                       _find_by_login, _load_users,
+                       create_session, revoke_session)
 
 _REMEMBER_FILE = "data/remember.json"
 
@@ -170,6 +172,23 @@ class LoginWindow:
             relief=tk.FLAT, bd=0,
         )
         cb.pack(side=tk.LEFT)
+
+        # Session duration dropdown
+        self._session_days = 7
+        _dur_options = {"1 day": 1, "3 days": 3, "7 days": 7, "14 days": 14, "30 days": 30}
+        _dur_var = tk.StringVar(value="7 days")
+        def _on_dur_change(*_):
+            self._session_days = _dur_options.get(_dur_var.get(), 7)
+        _dur_var.trace_add("write", _on_dur_change)
+        dur_menu = tk.OptionMenu(remember_row, _dur_var, *_dur_options.keys())
+        dur_menu.configure(
+            bg=t["bg"], fg=t["muted_fg"],
+            activebackground=t["border"],
+            highlightthickness=0,
+            relief=tk.FLAT, bd=0,
+            font=("TkDefaultFont", 8),
+        )
+        dur_menu.pack(side=tk.LEFT, padx=(4, 0))
 
         # ── Error message ─────────────────────────────
         self.msg_var = tk.StringVar()
@@ -396,14 +415,18 @@ class LoginWindow:
             return
         ok, val = verify_user(identifier, password)
         if ok:
-            # Resolve identifier → username key for key derivation
-            users    = _load_users()
-            ukey     = _find_by_login(identifier, users)
-            enc_key  = get_encryption_key(ukey, password) if ukey else None
+            users   = _load_users()
+            ukey    = _find_by_login(identifier, users)
+            enc_key = get_encryption_key(ukey, password) if ukey else None
+
             if self._remember_var.get():
                 _save_remembered(identifier)
+                days = getattr(self, "_session_days", 7)
+                create_session(ukey, days=days, enc_key=enc_key)
             else:
                 _clear_remembered()
+                revoke_session()
+
             self.result = (val, enc_key)
             self.top.grab_release()
             self.top.destroy()
@@ -461,7 +484,7 @@ class LoginWindow:
         self.top.destroy()
 
     def run(self):
-        """Block until login/register completes. Returns (display_name, enc_key) or (None, None)."""
+        """Returns (display_name, enc_key) or (None, None)."""
         self.root.wait_window(self.top)
         if self.result:
             return self.result

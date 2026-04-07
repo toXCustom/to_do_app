@@ -5,6 +5,7 @@ Registration requires username + email. Login accepts username OR email.
 """
 
 import json
+import os
 import re
 import hashlib
 import secrets
@@ -204,7 +205,7 @@ def update_password(username: str, current_pw: str, new_pw: str) -> tuple:
 
 # ── Encryption key derivation ─────────────────────────────────────────────────
 
-def get_encryption_key(username: str, password: str) -> bytes | None:
+def get_encryption_key(username: str, password: str) -> object:
     """
     Derive a 32-byte Fernet-compatible encryption key from the user's password.
     Uses a dedicated enc_salt stored alongside the password hash.
@@ -232,3 +233,123 @@ def get_encryption_key(username: str, password: str) -> bytes | None:
     )
     # Fernet requires a URL-safe base64-encoded 32-byte key
     return _b64.urlsafe_b64encode(derived)
+
+
+# ── Session token (auto-login) ────────────────────────────────────────────────
+
+_SESSION_FILE = "data/session.json"
+
+
+def _session_fernet(token: str):
+    """Derive a Fernet key from the session token string."""
+    import base64 as _b64
+    derived = hashlib.pbkdf2_hmac(
+        "sha256",
+        token.encode("utf-8"),
+        b"mytasks-session-salt",
+        iterations=100_000,
+        dklen=32,
+    )
+    return _b64.urlsafe_b64encode(derived)
+
+
+def create_session(username_key: str, days: int = 7,
+                   enc_key: bytes = None) -> str:
+    """
+    Create a secure session token for auto-login.
+    If enc_key is provided, wraps it inside the session so auto-login
+    can decrypt tasks without re-entering the password.
+    Saves to data/session.json and returns the token string.
+    """
+    import time
+    import base64 as _b64
+    token  = secrets.token_hex(32)
+    expiry = time.time() + days * 86400
+
+    payload = {
+        "token":        token,
+        "username_key": username_key,
+        "expiry":       expiry,
+        "days":         days,
+    }
+
+    # Wrap the enc_key inside the session, protected by the token itself
+    if enc_key:
+        try:
+            from cryptography.fernet import Fernet
+            session_fernet = Fernet(_session_fernet(token))
+            wrapped = session_fernet.encrypt(enc_key)
+            payload["wrapped_key"] = _b64.urlsafe_b64encode(wrapped).decode("ascii")
+        except ImportError:
+            pass   # cryptography not installed — session works without enc_key
+
+    os.makedirs(os.path.dirname(_SESSION_FILE), exist_ok=True)
+    with open(_SESSION_FILE, "w") as f:
+        json.dump(payload, f)
+    return token
+
+
+def verify_session() -> object:
+    """
+    Check data/session.json.
+    Returns {username_key, display_name, days, expiry, enc_key (or None)}
+    or None if missing / expired / invalid.
+    """
+    import time
+    import base64 as _b64
+    try:
+        with open(_SESSION_FILE) as f:
+            payload = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+
+    if time.time() > payload.get("expiry", 0):
+        revoke_session()
+        return None
+
+    users = _load_users()
+    key   = payload.get("username_key", "")
+    if key not in users:
+        revoke_session()
+        return None
+
+    # Attempt to recover the enc_key
+    enc_key = None
+    wrapped_b64 = payload.get("wrapped_key")
+    if wrapped_b64:
+        try:
+            from cryptography.fernet import Fernet, InvalidToken
+            token   = payload["token"]
+            wrapped = _b64.urlsafe_b64decode(wrapped_b64.encode("ascii"))
+            session_fernet = Fernet(_session_fernet(token))
+            enc_key = session_fernet.decrypt(wrapped)
+        except Exception:
+            enc_key = None
+
+    return {
+        "username_key": key,
+        "display_name": users[key]["display_name"],
+        "days":         payload.get("days", 7),
+        "expiry":       payload.get("expiry", 0),
+        "enc_key":      enc_key,
+    }
+
+
+def revoke_session():
+    """Delete the session token file."""
+    try:
+        os.remove(_SESSION_FILE)
+    except FileNotFoundError:
+        pass
+
+
+def session_days_remaining() -> float:
+    """Return days left in current session, or 0."""
+    import time
+    try:
+        with open(_SESSION_FILE) as f:
+            payload = json.load(f)
+        remaining = (payload.get("expiry", 0) - time.time()) / 86400
+        return max(0.0, remaining)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return 0.0
