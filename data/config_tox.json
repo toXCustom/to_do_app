@@ -1,8 +1,8 @@
 {
     "dark_mode": true,
-    "sort": "due_date",
+    "sort": "alphabetical",
     "filter": "Active",
-    "geometry": "1874x917+363+195",
+    "geometry": "1874x917+383+192",
     "categories": [
         "General",
         "Work",

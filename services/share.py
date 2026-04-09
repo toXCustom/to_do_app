@@ -102,9 +102,9 @@ def send_email_outlook(path: str, subject: str = "My Tasks export") -> bool:
 # ── WhatsApp ──────────────────────────────────────────────────────────────────
 
 def share_whatsapp(text: str) -> None:
-    """Open WhatsApp Web share URL with the text pre-filled (text only)."""
-    encoded = urllib.parse.quote(text[:4000])   # WA has a ~4000 char URL limit
-    webbrowser.open(f"https://wa.me/?text={encoded}")
+    """Open WhatsApp Web with text pre-filled — user picks the chat to send to."""
+    encoded = urllib.parse.quote(text[:4000])
+    webbrowser.open(f"https://web.whatsapp.com/send?text={encoded}")
 
 
 # ── Telegram ──────────────────────────────────────────────────────────────────
@@ -115,11 +115,111 @@ def share_telegram(text: str) -> None:
     webbrowser.open(f"https://t.me/share/url?url=&text={encoded}")
 
 
-# ── Generic communicator URLs ─────────────────────────────────────────────────
+# ── Signal ────────────────────────────────────────────────────────────────────
+
+def share_signal(text: str, root=None) -> None:
+    """
+    Signal has no web share URL — copy the text to clipboard and open Signal.
+    The user pastes into any Signal conversation.
+    """
+    if root:
+        root.clipboard_clear()
+        root.clipboard_append(text)
+        root.update()
+    # Try to launch Signal desktop app
+    if sys.platform == "win32":
+        _try_launch_app([
+            r"%LOCALAPPDATA%\Programs\signal-desktop\Signal.exe",
+            r"C:\Program Files\Signal\Signal.exe",
+        ])
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", "-a", "Signal"])
+    else:
+        subprocess.Popen(["signal-desktop"])
+
+
+# ── Messenger ─────────────────────────────────────────────────────────────────
+
+def share_messenger(text: str, root=None) -> None:
+    """
+    Open Messenger web in browser. Text is copied to clipboard so the
+    user can paste it into any conversation.
+    """
+    if root:
+        root.clipboard_clear()
+        root.clipboard_append(text)
+        root.update()
+    webbrowser.open("https://www.messenger.com")
+
+
+# ── Instagram ─────────────────────────────────────────────────────────────────
+
+def share_instagram(text: str, root=None) -> None:
+    """
+    Instagram has no web share API — copy text to clipboard and open Instagram.
+    User pastes into a DM.
+    """
+    if root:
+        root.clipboard_clear()
+        root.clipboard_append(text)
+        root.update()
+    webbrowser.open("https://www.instagram.com/direct/inbox/")
+
+
+# ── Discord ───────────────────────────────────────────────────────────────────
+
+def share_discord(text: str, root=None) -> None:
+    """
+    Discord has no public share URL — copy text to clipboard and open Discord.
+    User pastes into any channel or DM.
+    """
+    if root:
+        root.clipboard_clear()
+        root.clipboard_append(text)
+        root.update()
+    # Try to launch Discord desktop app first
+    launched = False
+    if sys.platform == "win32":
+        launched = _try_launch_app([
+            r"%LOCALAPPDATA%\Discord\Update.exe",
+        ])
+    elif sys.platform == "darwin":
+        try:
+            subprocess.Popen(["open", "-a", "Discord"])
+            launched = True
+        except Exception:
+            pass
+    if not launched:
+        webbrowser.open("https://discord.com/app")
+
+
+# ── Launch helper ─────────────────────────────────────────────────────────────
+
+def _try_launch_app(paths: list) -> bool:
+    """Try to launch an app from a list of candidate paths. Returns True on success."""
+    for raw_path in paths:
+        path = os.path.expandvars(raw_path)
+        if os.path.exists(path):
+            try:
+                subprocess.Popen([path])
+                return True
+            except Exception:
+                continue
+    return False
+
+
+# ── Communicators registry ────────────────────────────────────────────────────
+# Each entry: (label, emoji, fn, needs_root, note)
+# needs_root=True  → fn(text, root)  — copies to clipboard then opens app
+# needs_root=False → fn(text)        — opens a URL directly
 
 COMMUNICATORS = [
-    ("WhatsApp",  "💬", share_whatsapp),
-    ("Telegram",  "✈️",  share_telegram),
+    ("WhatsApp",  "💬", share_whatsapp,  False, "Opens WhatsApp Web"),
+    ("Telegram",  "✈️",  share_telegram,  False, "Opens Telegram Web"),
+    ("Signal",    "🔒", share_signal,    True,  "Copies text → opens Signal"),
+    ("Messenger", "💙", share_messenger, True,  "Copies text → opens Messenger"),
+    ("Instagram", "📸", share_instagram, True,  "Copies text → opens Instagram DMs"),
+    ("Discord",   "🎮", share_discord,   True,  "Copies text → opens Discord"),
 ]
 
 

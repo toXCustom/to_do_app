@@ -1657,18 +1657,36 @@ class TodoApp:
                          font=("TkDefaultFont", 8)).pack(side=tk.LEFT, padx=(6, 0))
 
             # ── Messaging ────────────────────────────────────
-            row_msg = _row()
             if fmt in ("TXT", "CSV"):
                 share_text = share_module.tasks_to_share_text(task_list)
-                for name, icon, fn in share_module.COMMUNICATORS:
-                    _share_btn(row_msg, f"{icon}  {name}",
-                               lambda f=fn: f(share_text))
+                # Split 6 apps across two rows of 3
+                row_msg1 = _row()
+                row_msg2 = _row()
+                rows_for = [row_msg1, row_msg1, row_msg2, row_msg1, row_msg2, row_msg2]
+                for (name, icon, fn, needs_root, note), row in zip(
+                        share_module.COMMUNICATORS, rows_for):
+                    if needs_root:
+                        _share_btn(row, f"{icon}  {name}",
+                                   lambda f=fn: f(share_text, self.root))
+                    else:
+                        _share_btn(row, f"{icon}  {name}",
+                                   lambda f=fn: f(share_text))
             else:
+                row_msg1 = _row()
+                row_msg2 = _row()
                 def _open_wa(): webbrowser.open("https://web.whatsapp.com")
                 def _open_tg(): webbrowser.open("https://web.telegram.org")
-                _share_btn(row_msg, "💬  WhatsApp Web", _open_wa)
-                _share_btn(row_msg, "✈️  Telegram Web",  _open_tg)
-                tk.Label(row_msg, text="— attach PDF manually",
+                def _open_dc(): webbrowser.open("https://discord.com/app")
+                def _open_ms(): webbrowser.open("https://www.messenger.com")
+                def _open_sg(): webbrowser.open("https://signal.org")
+                def _open_ig(): webbrowser.open("https://www.instagram.com/direct/inbox/")
+                _share_btn(row_msg1, "💬  WhatsApp",  _open_wa)
+                _share_btn(row_msg1, "✈️  Telegram",   _open_tg)
+                _share_btn(row_msg1, "🎮  Discord",   _open_dc)
+                _share_btn(row_msg2, "🔒  Signal",    _open_sg)
+                _share_btn(row_msg2, "💙  Messenger", _open_ms)
+                _share_btn(row_msg2, "📸  Instagram", _open_ig)
+                tk.Label(row_msg2, text="— attach PDF manually",
                          bg=t["bg"], fg=t["muted_fg"],
                          font=("TkDefaultFont", 8)).pack(side=tk.LEFT, padx=(4, 0))
 
