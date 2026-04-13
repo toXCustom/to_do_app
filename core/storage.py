@@ -40,6 +40,13 @@ def config_file(username=None) -> str:
     return f"data/config_{_safe(username)}.json" if username else CONFIG_FILE
 
 
+def attachments_dir(username=None) -> str:
+    """Return the folder where attachments are stored for this user."""
+    base = f"data/attachments/{_safe(username)}" if username else "data/attachments/default"
+    os.makedirs(base, exist_ok=True)
+    return base
+
+
 # ── Encryption helpers ────────────────────────────────────────────────────────
 
 def _fernet(enc_key: bytes):
@@ -85,6 +92,7 @@ def save_tasks(manager, username=None, enc_key=None):
             "category":     getattr(task, "category",    "General"),
             "done":         task.done,
             "recurrence":   getattr(task, "recurrence",  None),
+            "attachments":  getattr(task, "attachments", []),
             "created_at":   getattr(task, "created_at",  None),
             "completed_at": getattr(task, "completed_at", None),
         })
@@ -166,6 +174,7 @@ def _populate(manager, data: list):
         task.done         = td.get("done", False)
         task.category     = td.get("category", "General")
         task.recurrence   = td.get("recurrence", None)
+        task.attachments  = td.get("attachments", [])
         task.created_at   = td.get("created_at",   datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         task.completed_at = td.get("completed_at", None)
         task.update_status()

@@ -121,7 +121,8 @@ def snapshot(task) -> dict:
         "done":         task.done,
         "category":     getattr(task, "category",   "General"),
         "completed_at": getattr(task, "completed_at", None),
-        "recurrence":   getattr(task, "recurrence",  None),
+        "recurrence":   getattr(task, "recurrence",   None),
+        "attachments":  list(getattr(task, "attachments", [])),
     }
 
 
@@ -134,6 +135,7 @@ def _apply_snapshot(task, snap: dict):
     task.category     = snap.get("category",   "General")
     task.completed_at = snap.get("completed_at", None)
     task.recurrence   = snap.get("recurrence",   None)
+    task.attachments  = list(snap.get("attachments", []))
     task.update_status()
 
 

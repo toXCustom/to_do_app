@@ -285,9 +285,10 @@ class TodoApp:
 
         self.action_buttons = []
         for label, cmd in [
-            ("✎  Edit",       self.edit_task_gui),
-            ("✕  Delete",     self.delete_task_gui),
-            ("✔  Mark Done",  self.mark_done_gui),
+            ("✎  Edit",         self.edit_task_gui),
+            ("✕  Delete",       self.delete_task_gui),
+            ("✔  Mark Done",    self.mark_done_gui),
+            ("📎  Attachments", self.open_attachments_gui),
         ]:
             btn = tk.Button(
                 self.action_frame, text=label, command=cmd,
@@ -2175,6 +2176,53 @@ class TodoApp:
         recur_menu.configure(bg=t["surface2"], fg=t["fg"], activebackground=t["border"], relief="flat")
         recur_menu.grid(row=6, column=1, sticky="w", padx=10, pady=8)
 
+        # ── Attachments ───────────────────────────────
+        tk.Label(form, text="Attachments:", **self._lbl(t)).grid(
+            row=7, column=0, sticky="ne", padx=10, pady=8)
+
+        attach_frame = tk.Frame(form, bg=t["bg"])
+        attach_frame.grid(row=7, column=1, sticky="w", padx=10, pady=4)
+
+        _pending_attachments = []   # list of source paths to copy on confirm
+
+        attach_list = tk.Listbox(
+            attach_frame, height=3, width=36,
+            bg=t["entry_bg"], fg=t["fg"],
+            selectbackground=t["accent"], selectforeground=t["accent_fg"],
+            relief="flat", font=("TkDefaultFont", 9),
+            highlightthickness=1, highlightbackground=t["border"],
+        )
+        attach_list.pack(side=tk.LEFT)
+
+        def _add_attachment():
+            from tkinter.filedialog import askopenfilenames
+            paths = askopenfilenames(
+                title="Attach files",
+                filetypes=[
+                    ("Allowed files", "*.png *.jpg *.jpeg *.gif *.bmp *.webp *.odf *.txt *.csv"),
+                    ("Images",        "*.png *.jpg *.jpeg *.gif *.bmp *.webp"),
+                    ("Documents",     "*.odf *.txt *.csv"),
+                ],
+                parent=top,
+            )
+            for p in paths:
+                fname = os.path.basename(p)
+                if fname not in [os.path.basename(x) for x in _pending_attachments]:
+                    _pending_attachments.append(p)
+                    attach_list.insert(tk.END, fname)
+
+        def _remove_attachment():
+            sel = attach_list.curselection()
+            if sel:
+                idx = sel[0]
+                attach_list.delete(idx)
+                _pending_attachments.pop(idx)
+
+        btn_col = tk.Frame(attach_frame, bg=t["bg"])
+        btn_col.pack(side=tk.LEFT, padx=(6, 0))
+        self._btn(btn_col, t, "📎 Add",   _add_attachment).pack(fill=tk.X, pady=(0, 4))
+        self._btn(btn_col, t, "🗑 Remove", _remove_attachment).pack(fill=tk.X)
+
         def confirm():
             name = name_entry.get().strip()
             if not name:
@@ -2193,6 +2241,9 @@ class TodoApp:
                 task = self.manager.tasks[-1]
                 task.category   = cat_var.get()
                 task.recurrence = None if recur_var.get() == "None" else recur_var.get()
+            # Copy attachments to user's folder
+            if task:
+                task.attachments = self._copy_attachments(_pending_attachments)
             if task and task in self.manager.tasks:
                 self.manager.tasks.remove(task)
             if task:
@@ -2286,10 +2337,66 @@ class TodoApp:
         recur_menu.configure(bg=t["surface2"], fg=t["fg"], activebackground=t["border"], relief="flat")
         recur_menu.grid(row=6, column=1, sticky="w", padx=10, pady=8)
 
+        # ── Attachments ───────────────────────────────
+        tk.Label(form, text="Attachments:", **self._lbl(t)).grid(
+            row=7, column=0, sticky="ne", padx=10, pady=8)
+
+        attach_frame = tk.Frame(form, bg=t["bg"])
+        attach_frame.grid(row=7, column=1, sticky="w", padx=10, pady=4)
+
+        _pending_new   = []   # new source paths to copy
+        _current_paths = list(getattr(task_to_edit, "attachments", []))
+
+        attach_list = tk.Listbox(
+            attach_frame, height=3, width=36,
+            bg=t["entry_bg"], fg=t["fg"],
+            selectbackground=t["accent"], selectforeground=t["accent_fg"],
+            relief="flat", font=("TkDefaultFont", 9),
+            highlightthickness=1, highlightbackground=t["border"],
+        )
+        attach_list.pack(side=tk.LEFT)
+        for p in _current_paths:
+            attach_list.insert(tk.END, os.path.basename(p))
+
+        def _add_attachment_edit():
+            from tkinter.filedialog import askopenfilenames
+            paths = askopenfilenames(
+                title="Attach files",
+                filetypes=[
+                    ("Allowed files", "*.png *.jpg *.jpeg *.gif *.bmp *.webp *.odf *.txt *.csv"),
+                    ("Images",        "*.png *.jpg *.jpeg *.gif *.bmp *.webp"),
+                    ("Documents",     "*.odf *.txt *.csv"),
+                ],
+                parent=top,
+            )
+            for p in paths:
+                fname = os.path.basename(p)
+                _pending_new.append(p)
+                attach_list.insert(tk.END, fname)
+
+        def _remove_attachment_edit():
+            sel = attach_list.curselection()
+            if not sel:
+                return
+            idx = sel[0]
+            attach_list.delete(idx)
+            n_current = len(_current_paths)
+            if idx < n_current:
+                _current_paths.pop(idx)
+            else:
+                _pending_new.pop(idx - n_current)
+
+        btn_col = tk.Frame(attach_frame, bg=t["bg"])
+        btn_col.pack(side=tk.LEFT, padx=(6, 0))
+        self._btn(btn_col, t, "📎 Add",   _add_attachment_edit).pack(fill=tk.X, pady=(0, 4))
+        self._btn(btn_col, t, "🗑 Remove", _remove_attachment_edit).pack(fill=tk.X)
+
         before_snap = snapshot(task_to_edit)
 
         def confirm():
             new_due_str = cal.get_date()
+            copied = self._copy_attachments(_pending_new)
+            updated_attachments = _current_paths + copied
             after_snap = {
                 "name":        name_entry.get().strip(),
                 "description": desc_entry.get().strip(),
@@ -2298,6 +2405,7 @@ class TodoApp:
                 "due_date":    datetime.strptime(new_due_str, "%Y-%m-%d").date() if new_due_str else None,
                 "done":        task_to_edit.done,
                 "recurrence":  None if recur_var.get() == "None" else recur_var.get(),
+                "attachments": updated_attachments,
             }
             cmd = EditTaskCommand(task_to_edit, before_snap, after_snap)
             self.history.execute(cmd)
@@ -2345,6 +2453,146 @@ class TodoApp:
             self.refresh_tasks()
             self._update_undo_redo_buttons()
             save_tasks(self.manager, self.username, self.enc_key)
+
+    def _copy_attachments(self, source_paths: list) -> list:
+        """Copy source files into the user's attachments folder. Returns list of stored paths."""
+        from core.storage import attachments_dir
+        import shutil
+        dest_dir = attachments_dir(self.username)
+        stored = []
+        for src in source_paths:
+            try:
+                fname = os.path.basename(src)
+                dest  = os.path.join(dest_dir, fname)
+                # Avoid name collision
+                base, ext = os.path.splitext(fname)
+                counter = 1
+                while os.path.exists(dest):
+                    dest = os.path.join(dest_dir, f"{base}_{counter}{ext}")
+                    counter += 1
+                shutil.copy2(src, dest)
+                stored.append(dest)
+            except Exception as e:
+                print(f"[attachments] Could not copy {src}: {e}")
+        return stored
+
+    def open_attachments_gui(self):
+        """Show attachments panel for the selected task."""
+        selected = self.task_tree.selection()
+        if not selected:
+            messagebox.showinfo("Attachments", "Select a task first.")
+            return
+        task = self.get_task_from_selection(selected[0])
+        if not task:
+            return
+
+        t   = DARK_THEME if self.dark_mode else LIGHT_THEME
+        top = self._make_dialog(f"📎  Attachments — {task.name[:40]}")
+        top.geometry("460x380")
+        top.resizable(False, True)
+
+        # Header
+        hdr = tk.Frame(top, bg=t["surface"])
+        hdr.pack(fill=tk.X)
+        tk.Label(hdr, text=f"📎  {task.name}", font=("TkDefaultFont", 11, "bold"),
+                 bg=t["surface"], fg=t["fg"]).pack(anchor="w", padx=16, pady=10)
+        tk.Frame(top, height=1, bg=t["border"]).pack(fill=tk.X)
+
+        # Listbox
+        list_frame = tk.Frame(top, bg=t["bg"])
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=14, pady=10)
+
+        lb = tk.Listbox(
+            list_frame, bg=t["entry_bg"], fg=t["fg"],
+            selectbackground=t["accent"], selectforeground=t["accent_fg"],
+            relief="flat", font=("TkDefaultFont", 10),
+            highlightthickness=1, highlightbackground=t["border"],
+            activestyle="none",
+        )
+        lb.pack(fill=tk.BOTH, expand=True)
+
+        def _refresh_list():
+            lb.delete(0, tk.END)
+            for p in task.attachments:
+                size = ""
+                try:
+                    b = os.path.getsize(p)
+                    size = f"  ({b/1024:.1f} KB)" if b < 1024*1024 else f"  ({b/1024/1024:.1f} MB)"
+                except Exception:
+                    pass
+                lb.insert(tk.END, os.path.basename(p) + size)
+
+        _refresh_list()
+
+        # Buttons row
+        tk.Frame(top, height=1, bg=t["border"]).pack(fill=tk.X)
+        btn_row = tk.Frame(top, bg=t["surface"], height=54)
+        btn_row.pack(fill=tk.X)
+        btn_row.pack_propagate(False)
+
+        ALLOWED_EXT = {".png",".jpg",".jpeg",".gif",".bmp",".webp",".odf",".txt",".csv"}
+
+        def _add():
+            from tkinter.filedialog import askopenfilenames
+            paths = askopenfilenames(
+                title="Attach files",
+                filetypes=[
+                    ("Allowed files", "*.png *.jpg *.jpeg *.gif *.bmp *.webp *.odf *.txt *.csv"),
+                    ("Images",        "*.png *.jpg *.jpeg *.gif *.bmp *.webp"),
+                    ("Documents",     "*.odf *.txt *.csv"),
+                ],
+                parent=top,
+            )
+            if paths:
+                new_paths = self._copy_attachments(list(paths))
+                task.attachments.extend(new_paths)
+                save_tasks(self.manager, self.username, self.enc_key)
+                _refresh_list()
+
+        def _open():
+            sel = lb.curselection()
+            if not sel:
+                return
+            path = task.attachments[sel[0]]
+            if os.path.exists(path):
+                share_module.open_file(path)
+            else:
+                messagebox.showerror("Not found",
+                    f"File not found:\n{path}", parent=top)
+
+        def _remove():
+            sel = lb.curselection()
+            if not sel:
+                return
+            idx  = sel[0]
+            path = task.attachments[idx]
+            if messagebox.askyesno("Remove attachment",
+                f"Remove '{os.path.basename(path)}' from this task?\n"
+                "(The file is NOT deleted from disk.)", parent=top):
+                task.attachments.pop(idx)
+                save_tasks(self.manager, self.username, self.enc_key)
+                _refresh_list()
+
+        def _reveal():
+            sel = lb.curselection()
+            if not sel:
+                return
+            path = task.attachments[sel[0]]
+            if os.path.exists(path):
+                share_module.reveal_in_folder(path)
+            else:
+                messagebox.showerror("Not found", f"File not found:\n{path}", parent=top)
+
+        for label, cmd in [("📎 Add", _add), ("🔍 Open", _open),
+                            ("📂 Reveal", _reveal), ("🗑 Remove", _remove)]:
+            b = tk.Button(btn_row, text=label, command=cmd,
+                          bg=t["accent"] if label == "📎 Add" else t["surface2"],
+                          fg=t["accent_fg"] if label == "📎 Add" else t["fg"],
+                          activebackground=t["accent_hover"] if label == "📎 Add" else t["border"],
+                          relief="flat", cursor="hand2",
+                          font=("TkDefaultFont", 9, "bold" if label == "📎 Add" else "normal"),
+                          padx=10)
+            b.pack(side=tk.LEFT, padx=(8 if label == "📎 Add" else 4, 0), pady=10)
 
     def _spawn_recurrence(self, source_task, next_due):
         """Create the next occurrence of a recurring task."""
@@ -2665,10 +2913,9 @@ class TodoApp:
             return "break"
 
     def get_task_from_selection(self, item_id):
-        # Done is col 0; Name is col 1 (may have 🔁 badge appended)
         raw_name = self.task_tree.item(item_id, "values")[1]
-        # Strip recurrence badge if present
-        name = raw_name.split("  🔁")[0].strip()
+        # Strip recurrence and attachment badges
+        name = raw_name.split("  🔁")[0].split("  📎")[0].strip()
         for task in self.manager.tasks:
             if task.name == name:
                 return task
@@ -2722,8 +2969,13 @@ class TodoApp:
 
             category   = getattr(t, "category", "General")
             recurrence = getattr(t, "recurrence", None)
+            attachments = getattr(t, "attachments", [])
             RECUR_ICON = {"Daily": "🔁 Daily", "Weekly": "🔁 Weekly", "Monthly": "🔁 Monthly"}
-            display_name = f"{t.name}  {RECUR_ICON[recurrence]}" if recurrence else t.name
+            display_name = t.name
+            if recurrence:
+                display_name += f"  {RECUR_ICON[recurrence]}"
+            if attachments:
+                display_name += f"  📎{len(attachments)}"
 
             row_id = self.task_tree.insert(
                 "", tk.END,

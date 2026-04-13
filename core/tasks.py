@@ -10,7 +10,8 @@ class Task:
         self.due_date    = due_date
         self.priority    = priority
         self.category    = "General"
-        self.recurrence  = None   # None | "Daily" | "Weekly" | "Monthly"
+        self.recurrence  = None
+        self.attachments  = []    # list of relative paths under data/attachments/<user>/
         self.created_at   = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.completed_at = None
         self.update_status()
@@ -48,6 +49,7 @@ class Task:
             "priority":     self.priority,
             "category":     self.category,
             "recurrence":   self.recurrence,
+            "attachments":  self.attachments,
             "created_at":   self.created_at,
             "completed_at": self.completed_at,
         }
@@ -63,6 +65,7 @@ class Task:
         task.done         = data.get("done", False)
         task.category     = data.get("category", "General")
         task.recurrence   = data.get("recurrence", None)
+        task.attachments  = data.get("attachments", [])
         task.created_at   = data.get("created_at",   datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         task.completed_at = data.get("completed_at", None)
         task.update_status()
