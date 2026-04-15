@@ -80,24 +80,9 @@ def _decrypt(token: bytes, enc_key: bytes) -> bytes:
 def save_tasks(manager, username=None, enc_key=None):
     """
     Serialize tasks to JSON and, if enc_key is provided, encrypt the result.
-    Writes to  data/tasks_<user>.enc  (encrypted) or  .json  (plain).
     """
-    data = []
-    for task in manager.tasks:
-        data.append({
-            "name":         task.name,
-            "description":  task.description,
-            "due_date":     task.due_date.strftime("%Y-%m-%d") if task.due_date else None,
-            "priority":     task.priority,
-            "category":     getattr(task, "category",    "General"),
-            "done":         task.done,
-            "recurrence":   getattr(task, "recurrence",  None),
-            "attachments":  getattr(task, "attachments", []),
-            "created_at":   getattr(task, "created_at",  None),
-            "completed_at": getattr(task, "completed_at", None),
-        })
-
-    raw = json.dumps(data, indent=4).encode("utf-8")
+    data = [task.to_dict() for task in manager.tasks]
+    raw  = json.dumps(data, indent=4).encode("utf-8")
 
     if enc_key and username:
         path = tasks_file(username, encrypted=True)
@@ -159,25 +144,7 @@ def load_tasks(manager, username=None, enc_key=None):
 def _populate(manager, data: list):
     """Parse a list of task dicts into manager.tasks."""
     for td in data:
-        due = td.get("due_date")
-        if due:
-            try:
-                due = datetime.strptime(due, "%Y-%m-%d").date()
-            except ValueError:
-                due = None
-        task = Task(
-            td["name"],
-            td.get("description", ""),
-            due,
-            td.get("priority", "Medium"),
-        )
-        task.done         = td.get("done", False)
-        task.category     = td.get("category", "General")
-        task.recurrence   = td.get("recurrence", None)
-        task.attachments  = td.get("attachments", [])
-        task.created_at   = td.get("created_at",   datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-        task.completed_at = td.get("completed_at", None)
-        task.update_status()
+        task = Task.from_dict(td)
         manager.tasks.append(task)
 
 

@@ -104,6 +104,7 @@ class TodoApp:
 
         # Reminder config
         self.reminder_cfg = {**REMINDER_DEFAULTS, **config.get("reminders", {})}
+        self.api_cfg      = config.get("api", {"api_enabled": False, "api_port": 5000})
 
         self._build_ui()
         # ── Keyboard shortcuts ──────────────────────────
@@ -132,7 +133,8 @@ class TodoApp:
         self.auto_save()
         self.root.after(100, self._bind_cal_day_tooltips)
         self.root.after(300, self._start_tray)
-        self.root.after(500, self._start_reminders)
+        self.root.after(500,  self._start_reminders)
+        self.root.after(800,  self._start_api_server)
 
     # ═══════════════════════════════════════════════
     #  UI BUILD
@@ -285,10 +287,11 @@ class TodoApp:
 
         self.action_buttons = []
         for label, cmd in [
-            ("✎  Edit",         self.edit_task_gui),
-            ("✕  Delete",       self.delete_task_gui),
-            ("✔  Mark Done",    self.mark_done_gui),
-            ("📎  Attachments", self.open_attachments_gui),
+            ("✎  Edit",          self.edit_task_gui),
+            ("✕  Delete",        self.delete_task_gui),
+            ("✔  Mark Done",     self.mark_done_gui),
+            ("📎  Attachments",  self.open_attachments_gui),
+            ("◈  Subtasks",      self.open_subtasks_gui),
         ]:
             btn = tk.Button(
                 self.action_frame, text=label, command=cmd,
@@ -536,8 +539,10 @@ class TodoApp:
         columns = ("Done", "Name", "Category", "Priority", "Due", "DaysLeft", "Description")
         self.task_tree = ttk.Treeview(
             tree_frame, columns=columns,
-            show="headings", height=15
+            show="tree headings", height=15
         )
+        # Tree column (expand arrow) — slim
+        self.task_tree.column("#0", width=22, minwidth=22, stretch=False)
 
         col_config = {
             "Done":        (40,  "center"),
@@ -941,6 +946,7 @@ class TodoApp:
             "category_colors":   self.category_colors,
             "minimize_to_tray":  self.minimize_to_tray,
             "reminders":         self.reminder_cfg,
+            "api":               self.api_cfg,
         }, self.username)
 
     # ═══════════════════════════════════════════════
@@ -2055,6 +2061,84 @@ class TodoApp:
         self._btn(add_row, t, "Add", add_category, primary=True).pack(side=tk.LEFT)
         new_cat_entry.bind("<Return>", lambda e: add_category())
 
+        # ── LOCAL REST API ────────────────────────────
+        section(pad, "LOCAL REST API")
+
+        api_enabled_var = tk.BooleanVar(value=self.api_cfg.get("api_enabled", False))
+        api_port_var    = tk.StringVar(value=str(self.api_cfg.get("api_port", 5000)))
+
+        def _row_api(left, right_widget):
+            r = tk.Frame(pad, bg=t["bg"])
+            r.pack(fill=tk.X, pady=2)
+            tk.Label(r, text=left, font=("TkDefaultFont", 9),
+                     bg=t["bg"], fg=t["muted_fg"], width=16, anchor="w").pack(side=tk.LEFT)
+            right_widget(r).pack(side=tk.LEFT)
+
+        tk.Checkbutton(
+            pad, variable=api_enabled_var,
+            text="Enable local REST API  (requires app restart)",
+            font=("TkDefaultFont", 9),
+            bg=t["bg"], fg=t["fg"],
+            selectcolor=t["entry_bg"],
+            activebackground=t["bg"], activeforeground=t["fg"],
+            cursor="hand2", relief=tk.FLAT, bd=0,
+        ).pack(anchor="w", pady=(0, 6))
+
+        port_row = tk.Frame(pad, bg=t["bg"])
+        port_row.pack(anchor="w", pady=(0, 6))
+        tk.Label(port_row, text="Port:", font=("TkDefaultFont", 9),
+                 bg=t["bg"], fg=t["muted_fg"]).pack(side=tk.LEFT)
+        port_entry = tk.Entry(port_row, textvariable=api_port_var, width=7,
+                              bg=t["entry_bg"], fg=t["fg"],
+                              insertbackground=t["fg"], relief=tk.FLAT,
+                              font=("TkDefaultFont", 9),
+                              highlightthickness=1, highlightbackground=t["border"])
+        port_entry.pack(side=tk.LEFT, padx=(6, 0))
+
+        # API key display
+        try:
+            from api.server import API_KEY as _key
+            key_text = _key
+        except Exception:
+            key_text = "(start API to generate)"
+
+        key_row = tk.Frame(pad, bg=t["bg"])
+        key_row.pack(anchor="w", pady=(0, 4))
+        tk.Label(key_row, text="API Key:", font=("TkDefaultFont", 9),
+                 bg=t["bg"], fg=t["muted_fg"]).pack(side=tk.LEFT)
+        key_lbl = tk.Label(key_row, text=key_text[:20] + "…",
+                           font=("Courier", 8),
+                           bg=t["entry_bg"], fg=t["fg"], padx=6, pady=2)
+        key_lbl.pack(side=tk.LEFT, padx=(6, 0))
+
+        def _copy_key():
+            self.root.clipboard_clear()
+            self.root.clipboard_append(key_text)
+            key_lbl.configure(text="Copied!")
+            pad.after(1500, lambda: key_lbl.configure(text=key_text[:20] + "…"))
+
+        self._btn(key_row, t, "📋 Copy", _copy_key).pack(side=tk.LEFT, padx=(6, 0))
+
+        api_msg = tk.Label(pad, text="", font=("TkDefaultFont", 9),
+                           bg=t["bg"], fg="#4ADE80")
+        api_msg.pack(anchor="w", pady=(0, 4))
+
+        def _save_api():
+            try:
+                port = int(api_port_var.get())
+                assert 1024 <= port <= 65535
+            except (ValueError, AssertionError):
+                api_msg.configure(text="Port must be 1024–65535", fg="#F87171")
+                return
+            self.api_cfg["api_enabled"] = api_enabled_var.get()
+            self.api_cfg["api_port"]    = port
+            self.save_ui_config()
+            api_msg.configure(text="✓ Saved — restart to apply", fg="#4ADE80")
+            pad.after(2000, lambda: api_msg.configure(text=""))
+
+        self._btn(pad, t, "Save API Settings", _save_api, primary=True).pack(
+            anchor="w", pady=(0, 16))
+
     def _manage_categories_gui(self):
         """Dialog to add/remove custom categories."""
         top = self._make_dialog("Manage Categories")
@@ -2428,7 +2512,7 @@ class TodoApp:
         selected = self.task_tree.selection()
         if not selected:
             return
-        task = self.get_task_from_selection(selected[0])
+        task = self._get_task(selected[0])
         if task:
             cmd = DeleteTaskCommand(self.manager, task)
             self.history.execute(cmd)
@@ -2441,7 +2525,7 @@ class TodoApp:
         if not selected:
             messagebox.showinfo("Mark Done", "Select a task to mark done.")
             return
-        task = self.get_task_from_selection(selected[0])
+        task = self._get_task(selected[0])
         if task:
             cmd = MarkDoneCommand(task, task.done)
             self.history.execute(cmd)
@@ -2482,7 +2566,7 @@ class TodoApp:
         if not selected:
             messagebox.showinfo("Attachments", "Select a task first.")
             return
-        task = self.get_task_from_selection(selected[0])
+        task = self._get_task(selected[0])
         if not task:
             return
 
@@ -2593,6 +2677,179 @@ class TodoApp:
                           font=("TkDefaultFont", 9, "bold" if label == "📎 Add" else "normal"),
                           padx=10)
             b.pack(side=tk.LEFT, padx=(8 if label == "📎 Add" else 4, 0), pady=10)
+
+    def open_subtasks_gui(self):
+        """Manage subtasks for the selected parent task."""
+        selected = self.task_tree.selection()
+        if not selected:
+            messagebox.showinfo("Subtasks", "Select a task first.")
+            return
+
+        # Only work on top-level tasks
+        parent, sub = self.get_task_from_selection(selected[0])
+        if sub is not None:
+            messagebox.showinfo("Subtasks",
+                "Select the parent task (not a subtask) to manage subtasks.")
+            return
+        task = parent
+        if not task:
+            return
+
+        t   = DARK_THEME if self.dark_mode else LIGHT_THEME
+        top = self._make_dialog(f"◈  Subtasks — {task.name[:40]}")
+        top.geometry("500x420")
+        top.resizable(False, True)
+
+        # Header with progress bar
+        hdr = tk.Frame(top, bg=t["surface"])
+        hdr.pack(fill=tk.X)
+        tk.Label(hdr, text=f"◈  {task.name}",
+                 font=("TkDefaultFont", 11, "bold"),
+                 bg=t["surface"], fg=t["fg"]).pack(anchor="w", padx=16, pady=(10, 2))
+        self._prog_lbl = tk.Label(hdr, text="",
+                                  font=("TkDefaultFont", 9),
+                                  bg=t["surface"], fg=t["muted_fg"])
+        self._prog_lbl.pack(anchor="w", padx=16, pady=(0, 8))
+        tk.Frame(top, height=1, bg=t["border"]).pack(fill=tk.X)
+
+        def _update_progress():
+            done, total = task.subtask_progress
+            pct = int(done / total * 100) if total else 0
+            self._prog_lbl.configure(
+                text=f"{done}/{total} subtasks done  ({pct}%)"
+            )
+
+        # Subtask list
+        list_frame = tk.Frame(top, bg=t["bg"])
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=14, pady=10)
+
+        lb = tk.Listbox(
+            list_frame, bg=t["entry_bg"], fg=t["fg"],
+            selectbackground=t["accent"], selectforeground=t["accent_fg"],
+            relief="flat", font=("TkDefaultFont", 10),
+            highlightthickness=1, highlightbackground=t["border"],
+            activestyle="none",
+        )
+        lb.pack(fill=tk.BOTH, expand=True)
+
+        def _refresh_lb():
+            lb.delete(0, tk.END)
+            for s in task.subtasks:
+                check = "☑" if s.done else "☐"
+                prio  = {"High": "🔥", "Medium": "⚡", "Low": "🌿"}.get(s.priority, "")
+                due   = f"  {s.due_date.strftime('%d %b')}" if s.due_date else ""
+                lb.insert(tk.END, f"{check} {prio} {s.name}{due}")
+            _update_progress()
+
+        _refresh_lb()
+
+        # ── Add subtask row ───────────────────────────
+        tk.Frame(top, height=1, bg=t["border"]).pack(fill=tk.X)
+        add_frame = tk.Frame(top, bg=t["bg"])
+        add_frame.pack(fill=tk.X, padx=14, pady=8)
+
+        tk.Label(add_frame, text="New subtask:",
+                 font=("TkDefaultFont", 9), bg=t["bg"], fg=t["muted_fg"]).pack(side=tk.LEFT)
+        name_var = tk.StringVar()
+        name_entry = tk.Entry(
+            add_frame, textvariable=name_var, width=26,
+            bg=t["entry_bg"], fg=t["fg"],
+            insertbackground=t["fg"], relief=tk.FLAT,
+            font=("TkDefaultFont", 10),
+            highlightthickness=1, highlightbackground=t["border"],
+        )
+        name_entry.pack(side=tk.LEFT, padx=(6, 4))
+
+        prio_var = tk.StringVar(value="⚡ Medium")
+        pm = tk.OptionMenu(add_frame, prio_var, "🔥 High", "⚡ Medium", "🌿 Low")
+        pm.configure(bg=t["surface2"], fg=t["fg"],
+                     activebackground=t["border"], relief="flat", font=("TkDefaultFont", 9))
+        pm.pack(side=tk.LEFT, padx=(0, 4))
+
+        def _add_sub():
+            name = name_var.get().strip()
+            if not name:
+                return
+            task.add_subtask(name, priority=prio_var.get().split()[-1])
+            name_var.set("")
+            _refresh_lb()
+            self.refresh_tasks()
+            save_tasks(self.manager, self.username, self.enc_key)
+
+        add_btn = tk.Button(
+            add_frame, text="Add", command=_add_sub,
+            bg=t["accent"], fg=t["accent_fg"],
+            activebackground=t["accent_hover"],
+            relief=tk.FLAT, cursor="hand2",
+            font=("TkDefaultFont", 9, "bold"), padx=8,
+        )
+        add_btn.pack(side=tk.LEFT)
+        name_entry.bind("<Return>", lambda e: _add_sub())
+
+        # ── Action buttons ────────────────────────────
+        tk.Frame(top, height=1, bg=t["border"]).pack(fill=tk.X)
+        btn_row = tk.Frame(top, bg=t["surface"], height=50)
+        btn_row.pack(fill=tk.X)
+        btn_row.pack_propagate(False)
+
+        def _toggle_done_sub():
+            sel = lb.curselection()
+            if not sel:
+                return
+            sub = task.subtasks[sel[0]]
+            sub.done = not sub.done
+            if sub.done:
+                sub.completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                sub.completed_at = None
+            _refresh_lb()
+            self.refresh_tasks()
+            save_tasks(self.manager, self.username, self.enc_key)
+
+        def _remove_sub():
+            sel = lb.curselection()
+            if not sel:
+                return
+            sub = task.subtasks[sel[0]]
+            if messagebox.askyesno("Remove subtask",
+                    f"Remove subtask '{sub.name}'?", parent=top):
+                task.remove_subtask(sub)
+                _refresh_lb()
+                self.refresh_tasks()
+                save_tasks(self.manager, self.username, self.enc_key)
+
+        def _move_up():
+            sel = lb.curselection()
+            if not sel or sel[0] == 0:
+                return
+            idx = sel[0]
+            task.subtasks[idx], task.subtasks[idx-1] = task.subtasks[idx-1], task.subtasks[idx]
+            _refresh_lb()
+            lb.selection_set(idx - 1)
+            save_tasks(self.manager, self.username, self.enc_key)
+
+        def _move_down():
+            sel = lb.curselection()
+            if not sel or sel[0] >= len(task.subtasks) - 1:
+                return
+            idx = sel[0]
+            task.subtasks[idx], task.subtasks[idx+1] = task.subtasks[idx+1], task.subtasks[idx]
+            _refresh_lb()
+            lb.selection_set(idx + 1)
+            save_tasks(self.manager, self.username, self.enc_key)
+
+        for label, cmd in [
+            ("☑ Toggle done", _toggle_done_sub),
+            ("↑ Move up",     _move_up),
+            ("↓ Move down",   _move_down),
+            ("🗑 Remove",      _remove_sub),
+        ]:
+            tk.Button(btn_row, text=label, command=cmd,
+                      bg=t["surface2"], fg=t["fg"],
+                      activebackground=t["border"],
+                      relief=tk.FLAT, cursor="hand2",
+                      font=("TkDefaultFont", 9), padx=8
+                      ).pack(side=tk.LEFT, padx=(8, 0), pady=10)
 
     def _spawn_recurrence(self, source_task, next_due):
         """Create the next occurrence of a recurring task."""
@@ -2897,7 +3154,7 @@ class TodoApp:
         row_id = self.task_tree.identify_row(event.y)
 
         if region == "cell" and col == "#1" and row_id:
-            task = self.get_task_from_selection(row_id)
+            task = self._get_task(row_id)
             if task:
                 was_done = task.done
                 cmd = ToggleDoneCommand(task)
@@ -2913,13 +3170,34 @@ class TodoApp:
             return "break"
 
     def get_task_from_selection(self, item_id):
+        """Return (parent_task, subtask_or_None). subtask is None for top-level rows."""
         raw_name = self.task_tree.item(item_id, "values")[1]
-        # Strip recurrence and attachment badges
-        name = raw_name.split("  🔁")[0].split("  📎")[0].strip()
+        # Strip badges
+        name = raw_name.split("  🔁")[0].split("  📎")[0].split("  ◈")[0].strip()
+
+        parent_id = self.task_tree.parent(item_id)
+        if parent_id:
+            # It's a subtask row — find the parent first
+            parent_raw = self.task_tree.item(parent_id, "values")[1]
+            parent_name = parent_raw.split("  🔁")[0].split("  📎")[0].split("  ◈")[0].strip()
+            for task in self.manager.tasks:
+                if task.name == parent_name:
+                    # name has "  ↳ " prefix stripped
+                    clean = name.lstrip("↳ ").strip()
+                    for sub in task.subtasks:
+                        if sub.name == clean:
+                            return (task, sub)
+            return (None, None)
+
         for task in self.manager.tasks:
             if task.name == name:
-                return task
-        return None
+                return (task, None)
+        return (None, None)
+
+    def _get_task(self, item_id):
+        """Convenience — return just the Task (parent or subtask)."""
+        parent, sub = self.get_task_from_selection(item_id)
+        return sub if sub is not None else parent
 
     def get_filtered_tasks(self):
         tasks = logic.get_filtered_tasks(
@@ -2967,19 +3245,26 @@ class TodoApp:
             days_info = "" if t.done else self._days_info(t)
             checkbox  = "☑" if t.done else "☐"
 
-            category   = getattr(t, "category", "General")
-            recurrence = getattr(t, "recurrence", None)
+            category    = getattr(t, "category", "General")
+            recurrence  = getattr(t, "recurrence", None)
             attachments = getattr(t, "attachments", [])
-            RECUR_ICON = {"Daily": "🔁 Daily", "Weekly": "🔁 Weekly", "Monthly": "🔁 Monthly"}
+            subtasks    = getattr(t, "subtasks", [])
+            RECUR_ICON  = {"Daily": "🔁 Daily", "Weekly": "🔁 Weekly", "Monthly": "🔁 Monthly"}
             display_name = t.name
             if recurrence:
                 display_name += f"  {RECUR_ICON[recurrence]}"
             if attachments:
                 display_name += f"  📎{len(attachments)}"
+            if subtasks:
+                done_sub = sum(1 for s in subtasks if s.done)
+                display_name += f"  ◈ {done_sub}/{len(subtasks)}"
 
             row_id = self.task_tree.insert(
                 "", tk.END,
-                values=(checkbox, display_name, category, PRIORITY_ICONS.get(t.priority, t.priority), due_str, days_info, t.description)
+                values=(checkbox, display_name, category,
+                        PRIORITY_ICONS.get(t.priority, t.priority),
+                        due_str, days_info, t.description),
+                open=True,
             )
 
             if t.done:
@@ -2992,6 +3277,27 @@ class TodoApp:
                 self.task_tree.item(row_id, tags=("medium",))
             else:
                 self.task_tree.item(row_id, tags=("low",))
+
+            # ── Insert subtasks as indented children ──
+            for sub in subtasks:
+                sub_due     = sub.due_date.strftime("%Y-%m-%d") if sub.due_date else "—"
+                sub_days    = "" if sub.done else self._days_info(sub)
+                sub_check   = "☑" if sub.done else "☐"
+                sub_display = f"  ↳ {sub.name}"
+                sub_id = self.task_tree.insert(
+                    row_id, tk.END,
+                    values=(sub_check, sub_display, "",
+                            PRIORITY_ICONS.get(sub.priority, sub.priority),
+                            sub_due, sub_days, sub.description),
+                )
+                if sub.done:
+                    self.task_tree.item(sub_id, tags=("done",))
+                elif sub.priority == "High":
+                    self.task_tree.item(sub_id, tags=("high",))
+                elif sub.priority == "Medium":
+                    self.task_tree.item(sub_id, tags=("medium",))
+                else:
+                    self.task_tree.item(sub_id, tags=("low",))
 
         self._configure_tags()
 
@@ -3496,6 +3802,28 @@ class TodoApp:
         )
         self._reminder_svc.start()
 
+    def _start_api_server(self):
+        """Start the local REST API server if enabled in config."""
+        cfg = self.reminder_cfg   # reuse existing config dict for simplicity
+        if not self.api_cfg.get("api_enabled", False):
+            self._api_server = None
+            return
+        try:
+            from api.server import TaskAPIServer
+            from core.storage import save_tasks as _save
+            port = self.api_cfg.get("api_port", 5000)
+            self._api_server = TaskAPIServer(
+                manager  = self.manager,
+                save_fn  = _save,
+                username = self.username,
+                enc_key  = self.enc_key,
+                port     = port,
+            )
+            self._api_server.start()
+        except Exception as e:
+            print(f"[API] Failed to start: {e}")
+            self._api_server = None
+
     def _on_window_close(self):
         """Minimise to tray or quit depending on user preference."""
         if TRAY_AVAILABLE and self._tray_icon and self.minimize_to_tray:
@@ -3512,6 +3840,8 @@ class TodoApp:
                 pass
         if hasattr(self, "_reminder_svc"):
             self._reminder_svc.stop()
+        if hasattr(self, "_api_server") and self._api_server:
+            self._api_server.stop()
         save_tasks(self.manager, self.username, self.enc_key)
         self.save_ui_config()
         self.root.destroy()

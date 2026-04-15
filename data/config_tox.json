@@ -20,5 +20,9 @@
         "remind_tomorrow": false,
         "remind_3days": false,
         "check_interval": 60
+    },
+    "api": {
+        "api_enabled": true,
+        "api_port": 5000
     }
 }
