@@ -1,0 +1,16 @@
+{
+    "dark_mode": true,
+    "sort": "due_date",
+    "filter": "All",
+    "geometry": "1364x743+617+233",
+    "categories": [
+        "General",
+        "Work",
+        "Personal",
+        "Shopping",
+        "Health",
+        "Finance"
+    ],
+    "category_colors": {},
+    "minimize_to_tray": true
+}

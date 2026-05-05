@@ -9,8 +9,14 @@ import os
 import re
 import hashlib
 import secrets
+import time
+import base64 as _b64
 
 USERS_FILE = "data/users.json"
+
+# Pre-compiled regex patterns
+_RE_EMAIL    = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_RE_USERNAME = re.compile(r"^[a-zA-Z0-9_\-]+$")
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
@@ -25,7 +31,7 @@ def _load_users() -> dict:
 
 def _save_users(users: dict):
     with open(USERS_FILE, "w") as f:
-        json.dump(users, f, indent=4)
+        json.dump(users, f, separators=(",", ":"))
 
 
 def _hash_password(password: str, salt=None):
@@ -41,7 +47,7 @@ def _hash_password(password: str, salt=None):
 
 
 def _is_valid_email(email: str) -> bool:
-    return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email.strip()))
+    return bool(_RE_EMAIL.match(email.strip()))
 
 
 def _find_by_login(identifier: str, users: dict):
@@ -50,10 +56,8 @@ def _find_by_login(identifier: str, users: dict):
     Returns the key string or None.
     """
     ident = identifier.strip().lower()
-    # Direct username match
     if ident in users:
         return ident
-    # Email match — scan all records
     for key, rec in users.items():
         if rec.get("email", "").lower() == ident:
             return key
@@ -85,7 +89,7 @@ def register_user(username: str, email: str, password: str):
         return False, "Username must be at least 3 characters."
     if len(username) > 32:
         return False, "Username must be 32 characters or fewer."
-    if not re.match(r"^[a-zA-Z0-9_\-]+$", username):
+    if not _RE_USERNAME.match(username):
         return False, "Username may only contain letters, numbers, _ and -."
     if not email:
         return False, "Email cannot be empty."
@@ -166,7 +170,7 @@ def update_username(old_username: str, new_username: str) -> tuple:
     rec["display_name"] = new_username
     users[new_key] = rec
     _save_users(users)
-    return True, new_username   # return new display_name
+    return True, new_username
 
 
 def update_email(username: str, new_email: str) -> tuple:
@@ -178,7 +182,6 @@ def update_email(username: str, new_email: str) -> tuple:
     key   = username.strip().lower()
     if key not in users:
         return False, "User not found."
-    # Check duplicate (ignore own email)
     for k, rec in users.items():
         if k != key and rec.get("email", "").lower() == new_email:
             return False, "That email is already in use."
@@ -191,11 +194,15 @@ def update_password(username: str, current_pw: str, new_pw: str) -> tuple:
     """Change password after verifying current one. Returns (ok, message)."""
     if len(new_pw) < 6:
         return False, "New password must be at least 6 characters."
-    ok, _ = verify_user(username, current_pw)
-    if not ok:
-        return False, "Current password is incorrect."
+    # Load users once and verify inline (avoids double _load_users call)
     users = _load_users()
     key   = username.strip().lower()
+    if key not in users:
+        return False, "User not found."
+    record = users[key]
+    check_hex, _ = _hash_password(current_pw, salt=record["salt"])
+    if check_hex != record["hash"]:
+        return False, "Current password is incorrect."
     hash_hex, salt = _hash_password(new_pw)
     users[key]["hash"] = hash_hex
     users[key]["salt"] = salt
@@ -211,14 +218,12 @@ def get_encryption_key(username: str, password: str) -> object:
     Uses a dedicated enc_salt stored alongside the password hash.
     Returns the URL-safe base64-encoded key (44 bytes), or None if user not found.
     """
-    import base64 as _b64
     users = _load_users()
     key   = username.strip().lower()
     if key not in users:
         return None
     rec = users[key]
 
-    # Create enc_salt on first call (old accounts won't have it yet)
     if "enc_salt" not in rec:
         rec["enc_salt"] = secrets.token_hex(16)
         _save_users(users)
@@ -231,7 +236,6 @@ def get_encryption_key(username: str, password: str) -> object:
         iterations=260_000,
         dklen=32,
     )
-    # Fernet requires a URL-safe base64-encoded 32-byte key
     return _b64.urlsafe_b64encode(derived)
 
 
@@ -242,7 +246,6 @@ _SESSION_FILE = "data/session.json"
 
 def _session_fernet(token: str):
     """Derive a Fernet key from the session token string."""
-    import base64 as _b64
     derived = hashlib.pbkdf2_hmac(
         "sha256",
         token.encode("utf-8"),
@@ -259,10 +262,7 @@ def create_session(username_key: str, days: int = 7,
     Create a secure session token for auto-login.
     If enc_key is provided, wraps it inside the session so auto-login
     can decrypt tasks without re-entering the password.
-    Saves to data/session.json and returns the token string.
     """
-    import time
-    import base64 as _b64
     token  = secrets.token_hex(32)
     expiry = time.time() + days * 86400
 
@@ -273,7 +273,6 @@ def create_session(username_key: str, days: int = 7,
         "days":         days,
     }
 
-    # Wrap the enc_key inside the session, protected by the token itself
     if enc_key:
         try:
             from cryptography.fernet import Fernet
@@ -281,11 +280,11 @@ def create_session(username_key: str, days: int = 7,
             wrapped = session_fernet.encrypt(enc_key)
             payload["wrapped_key"] = _b64.urlsafe_b64encode(wrapped).decode("ascii")
         except ImportError:
-            pass   # cryptography not installed — session works without enc_key
+            pass
 
     os.makedirs(os.path.dirname(_SESSION_FILE), exist_ok=True)
     with open(_SESSION_FILE, "w") as f:
-        json.dump(payload, f)
+        json.dump(payload, f, separators=(",", ":"))
     return token
 
 
@@ -295,8 +294,6 @@ def verify_session() -> object:
     Returns {username_key, display_name, days, expiry, enc_key (or None)}
     or None if missing / expired / invalid.
     """
-    import time
-    import base64 as _b64
     try:
         with open(_SESSION_FILE) as f:
             payload = json.load(f)
@@ -313,7 +310,6 @@ def verify_session() -> object:
         revoke_session()
         return None
 
-    # Attempt to recover the enc_key
     enc_key = None
     wrapped_b64 = payload.get("wrapped_key")
     if wrapped_b64:
@@ -345,7 +341,6 @@ def revoke_session():
 
 def session_days_remaining() -> float:
     """Return days left in current session, or 0."""
-    import time
     try:
         with open(_SESSION_FILE) as f:
             payload = json.load(f)

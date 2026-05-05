@@ -1,0 +1,15 @@
+{
+  "active": "Default",
+  "workspaces": [
+    {
+      "name": "Default",
+      "description": "My personal tasks",
+      "color": "#E07A47"
+    },
+    {
+      "name": "ToDoApp",
+      "description": "",
+      "color": "#4A9EE0"
+    }
+  ]
+}

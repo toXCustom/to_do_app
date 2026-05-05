@@ -1,16 +1,24 @@
 """
 login.py — Login / Register window for My Tasks.
-Call LoginWindow(root).run() → returns display_name string or None if cancelled.
+Call LoginWindow(root).run() → returns (display_name, enc_key) or (None, None).
 """
 
 import json
 import os
+import re
 import tkinter as tk
 from core.auth import (verify_user, register_user, get_encryption_key,
                        _find_by_login, _load_users,
                        create_session, revoke_session)
 
 _REMEMBER_FILE = "data/remember.json"
+
+# Pre-compiled regexes (avoid import re inside every keystroke callback)
+_RE_USERNAME = re.compile(r"^[a-zA-Z0-9_\-]+$")
+_RE_EMAIL    = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_RE_UPPER    = re.compile(r"[A-Z]")
+_RE_DIGIT    = re.compile(r"[0-9]")
+_RE_SPECIAL  = re.compile(r"[^a-zA-Z0-9]")
 
 _DARK = {
     "bg":        "#13151A",
@@ -47,7 +55,6 @@ _LIGHT = {
 # ── Remember-me helpers ───────────────────────────────────────────────────────
 
 def _load_remembered() -> dict:
-    """Return {identifier, remember} or empty dict."""
     try:
         with open(_REMEMBER_FILE) as f:
             return json.load(f)
@@ -112,7 +119,11 @@ class LoginWindow:
         self.form_frame = tk.Frame(self.top, bg=t["bg"])
         self.form_frame.pack(fill=tk.BOTH, expand=True, padx=36, pady=12)
 
-        self._build_login_form(t)
+        # Build correct form for current mode (avoids double-build on theme toggle)
+        if self._mode == "register":
+            self._build_register_form(t)
+        else:
+            self._build_login_form(t)
 
         # Theme toggle
         bar = tk.Frame(self.top, bg=t["bg"])
@@ -131,21 +142,18 @@ class LoginWindow:
                  font=("TkDefaultFont", 13, "bold"),
                  bg=t["bg"], fg=t["fg"]).pack(anchor="w", pady=(0, 14))
 
-        # Username or Email
         tk.Label(self.form_frame, text="Username or Email",
                  font=("TkDefaultFont", 9), bg=t["bg"], fg=t["muted_fg"]).pack(anchor="w")
         self.login_var = tk.StringVar()
         self._login_entry = self._entry(self.form_frame, self.login_var, t)
         self._login_entry.pack(fill=tk.X, pady=(3, 10))
 
-        # Password
         tk.Label(self.form_frame, text="Password",
                  font=("TkDefaultFont", 9), bg=t["bg"], fg=t["muted_fg"]).pack(anchor="w")
         self.password_var = tk.StringVar()
         self._pw_entry = self._entry(self.form_frame, self.password_var, t, show="●")
         self._pw_entry.pack(fill=tk.X, pady=(3, 0))
 
-        # Show / hide password
         self._show_pw = False
         self._eye_btn = tk.Button(self.form_frame, text="Show",
                                   font=("TkDefaultFont", 8),
@@ -154,26 +162,19 @@ class LoginWindow:
                                   command=self._toggle_show_pw)
         self._eye_btn.pack(anchor="e", pady=(2, 6))
 
-        # ── Remember me ───────────────────────────────
+        # Remember me
         remember_row = tk.Frame(self.form_frame, bg=t["bg"])
         remember_row.pack(anchor="w", pady=(0, 8))
 
         self._remember_var = tk.BooleanVar(value=bool(self._remembered))
         cb = tk.Checkbutton(
-            remember_row,
-            variable=self._remember_var,
-            text="Remember me",
-            font=("TkDefaultFont", 9),
-            bg=t["bg"], fg=t["muted_fg"],
-            selectcolor=t["check_bg"],
-            activebackground=t["bg"],
-            activeforeground=t["fg"],
-            cursor="hand2",
-            relief=tk.FLAT, bd=0,
+            remember_row, variable=self._remember_var, text="Remember me",
+            font=("TkDefaultFont", 9), bg=t["bg"], fg=t["muted_fg"],
+            selectcolor=t["check_bg"], activebackground=t["bg"],
+            activeforeground=t["fg"], cursor="hand2", relief=tk.FLAT, bd=0,
         )
         cb.pack(side=tk.LEFT)
 
-        # Session duration dropdown
         self._session_days = 7
         _dur_options = {"1 day": 1, "3 days": 3, "7 days": 7, "14 days": 14, "30 days": 30}
         _dur_var = tk.StringVar(value="7 days")
@@ -182,15 +183,13 @@ class LoginWindow:
         _dur_var.trace_add("write", _on_dur_change)
         dur_menu = tk.OptionMenu(remember_row, _dur_var, *_dur_options.keys())
         dur_menu.configure(
-            bg=t["bg"], fg=t["muted_fg"],
-            activebackground=t["border"],
-            highlightthickness=0,
-            relief=tk.FLAT, bd=0,
+            bg=t["bg"], fg=t["muted_fg"], activebackground=t["border"],
+            highlightthickness=0, relief=tk.FLAT, bd=0,
             font=("TkDefaultFont", 8),
         )
         dur_menu.pack(side=tk.LEFT, padx=(4, 0))
 
-        # ── Error message ─────────────────────────────
+        # Error
         self.msg_var = tk.StringVar()
         tk.Label(self.form_frame, textvariable=self.msg_var,
                  font=("TkDefaultFont", 9), bg=t["bg"], fg=t["error"],
@@ -215,7 +214,6 @@ class LoginWindow:
                   relief=tk.FLAT, cursor="hand2", bd=0,
                   command=self._switch_to_register).pack()
 
-        # Pre-fill remembered identifier
         if self._remembered.get("identifier"):
             self.login_var.set(self._remembered["identifier"])
             self._pw_entry.focus_set()
@@ -235,7 +233,7 @@ class LoginWindow:
                  font=("TkDefaultFont", 13, "bold"),
                  bg=t["bg"], fg=t["fg"]).pack(anchor="w", pady=(0, 10))
 
-        # ── Username ──────────────────────────────────
+        # Username
         tk.Label(self.form_frame, text="Username",
                  font=("TkDefaultFont", 9), bg=t["bg"], fg=t["muted_fg"]).pack(anchor="w")
         self.username_var = tk.StringVar()
@@ -249,12 +247,11 @@ class LoginWindow:
 
         def _check_username(*_):
             v = self.username_var.get()
-            import re as _re
             if not v:
                 uname_hint.config(text="", fg=t["muted_fg"])
             elif len(v) < 3:
                 uname_hint.config(text="✗  At least 3 characters", fg="#F87171")
-            elif not _re.match(r"^[a-zA-Z0-9_\-]+$", v):
+            elif not _RE_USERNAME.match(v):
                 uname_hint.config(text="✗  Letters, numbers, _ and - only", fg="#F87171")
             elif len(v) > 32:
                 uname_hint.config(text="✗  Maximum 32 characters", fg="#F87171")
@@ -263,7 +260,7 @@ class LoginWindow:
 
         self.username_var.trace_add("write", _check_username)
 
-        # ── Email ─────────────────────────────────────
+        # Email
         tk.Label(self.form_frame, text="Email address",
                  font=("TkDefaultFont", 9), bg=t["bg"], fg=t["muted_fg"]).pack(anchor="w")
         self.email_var = tk.StringVar()
@@ -274,25 +271,23 @@ class LoginWindow:
         email_hint.pack(anchor="w", pady=(0, 6))
 
         def _check_email(*_):
-            import re as _re
             v = self.email_var.get().strip()
             if not v:
                 email_hint.config(text="")
-            elif _re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", v):
+            elif _RE_EMAIL.match(v):
                 email_hint.config(text="✓  Valid email", fg="#4ADE80")
             else:
                 email_hint.config(text="✗  Enter a valid email address", fg="#F87171")
 
         self.email_var.trace_add("write", _check_email)
 
-        # ── Password ──────────────────────────────────
+        # Password
         tk.Label(self.form_frame, text="Password",
                  font=("TkDefaultFont", 9), bg=t["bg"], fg=t["muted_fg"]).pack(anchor="w")
         self.password_var = tk.StringVar()
         self._entry(self.form_frame, self.password_var, t, show="●").pack(
             fill=tk.X, pady=(3, 4))
 
-        # Strength bar (5 segments)
         bar_frame = tk.Frame(self.form_frame, bg=t["bg"])
         bar_frame.pack(fill=tk.X, pady=(0, 2))
         _segs = []
@@ -305,19 +300,17 @@ class LoginWindow:
                                 bg=t["bg"], fg=t["muted_fg"])
         strength_lbl.pack(anchor="w", pady=(0, 6))
 
+        _STRENGTH_COLORS = ["#F87171", "#FB923C", "#FACC15", "#86EFAC", "#4ADE80"]
+        _STRENGTH_LABELS = ["Very weak", "Weak", "Fair", "Strong", "Very strong"]
+
         def _pw_strength(pw: str) -> int:
-            """Return score 0-5."""
-            import re as _re
             score = 0
             if len(pw) >= 8:  score += 1
             if len(pw) >= 12: score += 1
-            if _re.search(r"[A-Z]", pw): score += 1
-            if _re.search(r"[0-9]", pw): score += 1
-            if _re.search(r"[^a-zA-Z0-9]", pw): score += 1
+            if _RE_UPPER.search(pw): score += 1
+            if _RE_DIGIT.search(pw): score += 1
+            if _RE_SPECIAL.search(pw): score += 1
             return score
-
-        _STRENGTH_COLORS = ["#F87171", "#FB923C", "#FACC15", "#86EFAC", "#4ADE80"]
-        _STRENGTH_LABELS = ["Very weak", "Weak", "Fair", "Strong", "Very strong"]
 
         def _check_password(*_):
             pw    = self.password_var.get()
@@ -338,7 +331,7 @@ class LoginWindow:
 
         self.password_var.trace_add("write", _check_password)
 
-        # ── Confirm password ──────────────────────────
+        # Confirm password
         tk.Label(self.form_frame, text="Confirm password",
                  font=("TkDefaultFont", 9), bg=t["bg"], fg=t["muted_fg"]).pack(anchor="w")
         self.confirm_var = tk.StringVar()
@@ -361,7 +354,7 @@ class LoginWindow:
 
         self.confirm_var.trace_add("write", _check_confirm)
 
-        # ── Error / submit ────────────────────────────
+        # Error / submit
         self.msg_var = tk.StringVar()
         tk.Label(self.form_frame, textvariable=self.msg_var,
                  font=("TkDefaultFont", 9), bg=t["bg"], fg="#F87171",
@@ -446,9 +439,9 @@ class LoginWindow:
             return
         ok, msg = register_user(username, email, password)
         if ok:
-            _, display = verify_user(username, password)
-            enc_key    = get_encryption_key(username.lower(), password)
-            self.result = (display, enc_key)
+            # Skip redundant verify_user — registration already validated the password
+            enc_key = get_encryption_key(username.lower(), password)
+            self.result = (msg, enc_key)  # msg is display_name on success
             self.top.grab_release()
             self.top.destroy()
         else:
@@ -474,9 +467,7 @@ class LoginWindow:
         self.dark_mode = not self.dark_mode
         for w in self.top.winfo_children():
             w.destroy()
-        self._build()
-        if self._mode == "register":
-            self._switch_to_register()
+        self._build()  # _build now checks self._mode, so no double form build
 
     def _on_close(self):
         self.result = None

@@ -1,16 +1,205 @@
 import os
 import sys
-# Ensure project root is on the path when this file is run directly
+import threading
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import webbrowser
 import tkinter as tk
 import tkinter.ttk as ttk
 from tkinter import messagebox
+
 from core.tasks import TaskManager
 from core.storage import save_tasks, load_tasks, save_config, load_config
 from datetime import datetime
-from tkcalendar import Calendar
+
+
+import calendar as _calendar_lib
+
+# ── Pure-canvas MiniCalendar — replaces tkcalendar entirely ──────────────────
+# Zero external dependencies. Fully compatible with ttkbootstrap.
+# API is a superset of tkcalendar's Calendar API used in this app.
+
+class MiniCalendar(tk.Frame):
+    DAY_W = 28; DAY_H = 24; DOW_H = 18; PAD = 4
+
+    def __init__(self, master, **kw):
+        # Strip tkcalendar-only kwargs we accept but don't use at init
+        for k in ("selectmode","date_pattern","showweeknumbers","font",
+                  "tooltipdelay"):
+            kw.pop(k, None)
+        super().__init__(master)
+        from datetime import date
+        self._today    = date.today()
+        self._date     = self._today.replace(day=1)
+        self._selected = self._today
+        self._events   = {}   # date → [(ev_id, text, tag), …]
+        self._tag_cfg  = {}   # tag  → {background, foreground}
+        self._day_rects = {}  # date → (x1,y1,x2,y2)
+        self._hover_date = None
+        # Colour defaults (dark)
+        self._bg=self._norm_bg="#22262F"; self._fg=self._norm_fg="#EDE9E3"
+        self._hdr_bg="#1C1F26"; self._hdr_fg="#8A8E99"
+        self._sel_bg="#E07A47"; self._sel_fg="#FFFFFF"
+        self._wknd_bg="#1C1F26"; self._wknd_fg="#EDE9E3"
+        self._other_bg="#13151A"; self._other_fg="#8A8E99"
+        self._border_c="#2E3340"
+        # Header row
+        hdr = tk.Frame(self, bg=self._hdr_bg)
+        hdr.pack(fill=tk.X)
+        self._hdr_frame = hdr
+        self._l_year  = tk.Button(hdr,text="«",relief="flat",cursor="hand2",font=("TkDefaultFont",9),command=self._prev_year)
+        self._l_month = tk.Button(hdr,text="‹",relief="flat",cursor="hand2",font=("TkDefaultFont",9),command=self._prev_month)
+        self._month_lbl = tk.Label(hdr,text="",font=("TkDefaultFont",9,"bold"))
+        self._r_month = tk.Button(hdr,text="›",relief="flat",cursor="hand2",font=("TkDefaultFont",9),command=self._next_month)
+        self._r_year  = tk.Button(hdr,text="»",relief="flat",cursor="hand2",font=("TkDefaultFont",9),command=self._next_year)
+        for w in (self._l_year,self._l_month): w.pack(side=tk.LEFT,padx=2,pady=3)
+        self._month_lbl.pack(side=tk.LEFT,expand=True)
+        for w in (self._r_month,self._r_year): w.pack(side=tk.RIGHT,padx=2,pady=3)
+        W = self.DAY_W*7; H = self.DOW_H + self.DAY_H*6 + self.PAD
+        self._canvas = tk.Canvas(self,width=W,height=H,highlightthickness=0,bd=0)
+        self._canvas.pack(fill=tk.X,padx=self.PAD,pady=(0,self.PAD))
+        self._canvas.bind("<Button-1>",self._on_click)
+        self._canvas.bind("<Motion>",  self._on_motion)
+        self._canvas.bind("<Leave>",   self._on_leave)
+        self._redraw()
+
+    # ── tkcalendar-compatible API ─────────────────────────────────────────────
+    def get_date(self): return self._selected.strftime("%Y-%m-%d")
+    def set_date(self,d):
+        from datetime import datetime as _dt
+        if isinstance(d,str): d=_dt.strptime(d,"%Y-%m-%d").date()
+        self._selected=d; self._date=d.replace(day=1); self._redraw()
+    def get_calevents(self):
+        return [ev_id for evs in self._events.values() for ev_id,_,_ in evs]
+    def calevent_create(self,date_obj,text,tag):
+        self._events.setdefault(date_obj,[])
+        ev_id=hash((date_obj,text,tag,len(self._events[date_obj])))
+        self._events[date_obj].append((ev_id,text,tag))
+        self._redraw(); return ev_id
+    def calevent_remove(self,ev_id=None):
+        if ev_id is None: self._events.clear()
+        else:
+            for d in list(self._events):
+                self._events[d]=[(i,t,g) for i,t,g in self._events[d] if i!=ev_id]
+                if not self._events[d]: del self._events[d]
+        self._redraw()
+    def tag_config(self,tag,**kw): self._tag_cfg[tag]=kw; self._redraw()
+    def configure(self,cnf=None,**kw):
+        if isinstance(cnf,dict): kw.update(cnf)
+        m={"background":"_bg","foreground":"_fg","headersbackground":"_hdr_bg",
+           "headersforeground":"_hdr_fg","selectbackground":"_sel_bg",
+           "selectforeground":"_sel_fg","normalbackground":"_norm_bg",
+           "normalforeground":"_norm_fg","weekendbackground":"_wknd_bg",
+           "weekendforeground":"_wknd_fg","othermonthbackground":"_other_bg",
+           "othermonthforeground":"_other_fg","bordercolor":"_border_c"}
+        for k,attr in m.items():
+            if k in kw: setattr(self,attr,kw[k])
+        self._redraw()
+    def after(self,ms,fn=None,*args):
+        return super().after(ms,fn,*args) if fn else super().after(ms)
+
+    # ── Drawing ───────────────────────────────────────────────────────────────
+    def _begin_update(self):
+        """Suppress redraws during bulk operations."""
+        self._batch = True
+
+    def _end_update(self):
+        """End batch mode and trigger a single redraw."""
+        self._batch = False
+        self._redraw()
+
+    def _redraw(self):
+        if getattr(self, '_batch', False):
+            return
+        from datetime import date as _d
+        c=self._canvas; c.delete("all")
+        bg=self._bg; fg=self._fg
+        hb=self._hdr_bg; hf=self._hdr_fg
+        sb=self._sel_bg; sf=self._sel_fg
+        nb=self._norm_bg; nf=self._norm_fg
+        wb=self._wknd_bg; wf=self._wknd_fg
+        ob=self._other_bg; of_=self._other_fg
+        bc=self._border_c
+        self._month_lbl.configure(text=self._date.strftime("%B %Y"),bg=hb,fg=fg)
+        for btn in (self._l_year,self._l_month,self._r_month,self._r_year):
+            btn.configure(bg=hb,fg=hf,activebackground=hb,activeforeground=fg)
+        self._hdr_frame.configure(bg=hb); self.configure_bg(bg)
+        c.configure(bg=bg)
+        DOW=["Mo","Tu","We","Th","Fr","Sa","Su"]
+        for i,lbl in enumerate(DOW):
+            c.create_text(i*self.DAY_W+self.DAY_W//2,self.DOW_H//2,text=lbl,
+                          fill=wf if i>=5 else hf,font=("TkDefaultFont",8))
+        y0=self.DOW_H; yr=self._date.year; mo=self._date.month
+        weeks=_calendar_lib.monthcalendar(yr,mo)
+        while len(weeks)<6: weeks.append([0]*7)
+        self._day_rects={}
+        for row,week in enumerate(weeks):
+            for col,day in enumerate(week):
+                x1=col*self.DAY_W; y1=y0+row*self.DAY_H
+                x2=x1+self.DAY_W; y2=y1+self.DAY_H
+                if day==0:
+                    c.create_rectangle(x1,y1,x2,y2,fill=ob,outline=""); continue
+                cd=_d(yr,mo,day)
+                evs=self._events.get(cd,[])
+                ev_cfg=self._tag_cfg.get(evs[0][2],{}) if evs else {}
+                ev_bg=ev_cfg.get("background"); ev_fg=ev_cfg.get("foreground")
+                is_sel=(cd==self._selected); is_today=(cd==self._today)
+                is_hover=(cd==self._hover_date); is_wknd=(col>=5)
+                if is_sel: cbg=sb; cfg=sf
+                elif ev_bg: cbg=ev_bg; cfg=ev_fg or fg
+                elif is_hover: cbg=sb; cfg=sf
+                elif is_wknd: cbg=wb; cfg=wf
+                else: cbg=nb; cfg=nf
+                c.create_rectangle(x1,y1,x2,y2,fill=cbg,outline=bc,width=1)
+                if is_today and not is_sel:
+                    c.create_rectangle(x1+1,y1+1,x2-1,y2-1,outline=sb,width=2,fill="")
+                font=("TkDefaultFont",8,"bold") if is_today else ("TkDefaultFont",8)
+                c.create_text(x1+self.DAY_W//2,y1+self.DAY_H//2,text=str(day),
+                              fill=cfg,font=font)
+                if evs and not ev_bg:
+                    c.create_oval(x2-8,y1+2,x2-2,y1+8,fill=sb,outline="")
+                self._day_rects[cd]=(x1,y1,x2,y2)
+
+    def configure_bg(self,bg):
+        try: tk.Frame.configure(self,bg=bg)
+        except Exception: pass
+
+    # ── Navigation ────────────────────────────────────────────────────────────
+    def _prev_month(self):
+        y,m=self._date.year,self._date.month; m-=1
+        if m==0: m=12; y-=1
+        from datetime import date as _d; self._date=_d(y,m,1); self._redraw()
+        self.event_generate("<<CalendarMonthChanged>>")
+    def _next_month(self):
+        y,m=self._date.year,self._date.month; m+=1
+        if m==13: m=1; y+=1
+        from datetime import date as _d; self._date=_d(y,m,1); self._redraw()
+        self.event_generate("<<CalendarMonthChanged>>")
+    def _prev_year(self):
+        self._date=self._date.replace(year=self._date.year-1); self._redraw()
+    def _next_year(self):
+        self._date=self._date.replace(year=self._date.year+1); self._redraw()
+
+    # ── Hit testing ───────────────────────────────────────────────────────────
+    def _hit(self,x,y):
+        y-=self.DOW_H
+        for d,(x1,y1,x2,y2) in self._day_rects.items():
+            if x1<=x<=x2 and (y1-self.DOW_H)<=y<=(y2-self.DOW_H): return d
+        return None
+    def _on_click(self,event):
+        d=self._hit(event.x,event.y)
+        if d: self._selected=d; self._redraw(); self.event_generate("<<CalendarSelected>>")
+    def _on_motion(self,event):
+        d=self._hit(event.x,event.y)
+        if d!=self._hover_date: self._hover_date=d; self._redraw()
+    def _on_leave(self,event):
+        if self._hover_date: self._hover_date=None; self._redraw()
+
+    # ── Stubs for _bind_cal_day_tooltips (canvas-based now) ──────────────────
+    @property
+    def _calendar(self): return []
+
+Calendar = MiniCalendar
 from core import logic
 from services import export as export_module
 from services import importer as import_module
@@ -75,32 +264,43 @@ class TodoApp:
         self.root         = root
         self.username     = username
         self.enc_key      = enc_key
-        self._session_info = _session_info   # dict from verify_session() or None   # display name of logged-in user
-        self.root.title(f"My Tasks — {username}" if username else "My Tasks")
+        self._session_info = _session_info
         self.root.minsize(720, 480)
         config = load_config(username)
         self.root.geometry(config.get("geometry", "900x620"))
         self.root.protocol("WM_DELETE_WINDOW", self._on_window_close)
         self._tray_icon = None
 
-        # Task manager
+        # ── Workspace ──────────────────────────────────
+        from core.workspaces import active_workspace, list_workspaces
+        self.workspace = active_workspace(username) if username else "Default"
+
+        # Task manager — load workspace-scoped file
         self.manager = TaskManager()
-        load_tasks(self.manager, username, enc_key)
+        load_tasks(self.manager, username, enc_key, workspace=self.workspace)
 
         # State
         config = load_config(username)
+        self._update_title()
         self.dark_mode = config.get("dark_mode", False)
         self.minimize_to_tray = config.get("minimize_to_tray", True)
         self.sort_type = tk.StringVar(value=config.get("sort", "due_date"))
-        self.sort_reverse = False          # ascending by default
+        self.sort_reverse = False
         self.filter_type = tk.StringVar(value=config.get("filter", "All"))
-        self._calendar_date_filter = None  # set when user clicks a calendar day
+        self._calendar_date_filter = None
         self.categories      = cat_module.load_categories(config)
         self.category_colors = cat_module.load_category_colors(config)
-        self._category_filter = None       # None = show all categories
+        self._category_filter = None
         self.history = CommandHistory()
         self.search_var = tk.StringVar()
-        self.search_var.trace_add("write", lambda *args: self.refresh_tasks())
+        self._search_after_id = None   # debounce handle
+
+        def _debounced_search(*_):
+            if self._search_after_id:
+                self.root.after_cancel(self._search_after_id)
+            self._search_after_id = self.root.after(200, self.refresh_tasks)
+
+        self.search_var.trace_add("write", _debounced_search)
 
         # Reminder config
         self.reminder_cfg = {**REMINDER_DEFAULTS, **config.get("reminders", {})}
@@ -166,6 +366,10 @@ class TodoApp:
             padx=16, pady=8
         )
         self.add_btn.pack(side=tk.RIGHT, padx=(0, 2))
+
+        # ── Workspace selector ──────────────────────────
+        if self.username:
+            self._build_workspace_chip()
 
         # ── User chip (only when logged in) ─────────
         if self.username:
@@ -345,6 +549,33 @@ class TodoApp:
             padx=11, pady=5
         )
         self.export_btn.pack(side=tk.LEFT, padx=(0, 6))
+
+        self.gantt_btn = tk.Button(
+            self.right_frame, text="📊  Gantt",
+            command=self.open_gantt_view,
+            relief="flat", cursor="hand2",
+            font=("TkDefaultFont", 10),
+            padx=11, pady=5
+        )
+        self.gantt_btn.pack(side=tk.LEFT, padx=(0, 6))
+
+        self.sync_btn = tk.Button(
+            self.right_frame, text="☁️  Sync",
+            command=self.open_cloud_sync_gui,
+            relief="flat", cursor="hand2",
+            font=("TkDefaultFont", 10),
+            padx=11, pady=5
+        )
+        self.sync_btn.pack(side=tk.LEFT, padx=(0, 6))
+
+        self.analytics_btn = tk.Button(
+            self.right_frame, text="📈  Analytics",
+            command=self.open_analytics_view,
+            relief="flat", cursor="hand2",
+            font=("TkDefaultFont", 10),
+            padx=11, pady=5
+        )
+        self.analytics_btn.pack(side=tk.LEFT, padx=(0, 6))
 
         self.settings_btn = tk.Button(
             self.right_frame, text="⚙  Settings",
@@ -709,6 +940,11 @@ class TodoApp:
         self.apply_theme()
 
     def apply_theme(self):
+        # Skip if theme hasn't changed (prevents redundant widget reconfiguration)
+        _cache_key = ("dark" if self.dark_mode else "light")
+        if getattr(self, "_last_applied_theme", None) == _cache_key:
+            return
+        self._last_applied_theme = _cache_key
         t = DARK_THEME if self.dark_mode else LIGHT_THEME
         self.root.configure(bg=t["bg"])
 
@@ -728,6 +964,9 @@ class TodoApp:
         if self.username and hasattr(self, "_user_chip"):
             self._user_chip.destroy()
             self._build_user_chip()
+        # Rebuild workspace chip for new theme colours
+        if self.username and hasattr(self, "_ws_chip"):
+            self._build_workspace_chip()
 
         # Separators
         for sep in [self.sep1, self.sep2, self.sep3]:
@@ -847,6 +1086,26 @@ class TodoApp:
         )
         self._bind_hover(self.export_btn, lambda: False,
                          rest_bg=t["surface2"], hover_bg=t["border"])
+        self.gantt_btn.configure(
+            bg=t["surface2"], fg=t["muted_fg"],
+            activebackground=t["border"],
+            activeforeground=t["fg"],
+        )
+        self._bind_hover(self.gantt_btn, lambda: False,
+                         rest_bg=t["surface2"], hover_bg=t["border"])
+        self.sync_btn.configure(
+            bg=t["surface2"], fg=t["muted_fg"],
+            activebackground=t["border"],
+            activeforeground=t["fg"],
+        )
+        self._bind_hover(self.sync_btn, lambda: False,
+                         rest_bg=t["surface2"], hover_bg=t["border"])
+        self.analytics_btn.configure(
+            bg=t["surface2"], fg=t["muted_fg"],
+            activebackground=t["border"], activeforeground=t["fg"],
+        )
+        self._bind_hover(self.analytics_btn, lambda: False,
+                         rest_bg=t["surface2"], hover_bg=t["border"])
         self.settings_btn.configure(
             bg=t["surface2"], fg=t["muted_fg"],
             activebackground=t["border"],
@@ -857,7 +1116,14 @@ class TodoApp:
 
         # Treeview
         style = ttk.Style()
-        style.theme_use("default")
+        # Use ttkbootstrap if loaded, otherwise fall back to "default"
+        try:
+            import ttkbootstrap as _bs
+            _bs_theme = "darkly" if self.dark_mode else "flatly"
+            style.theme_use(_bs_theme)
+        except (ImportError, Exception):
+            style.theme_use("default")
+
         style.configure(
             "Treeview",
             background=t["surface"],
@@ -888,8 +1154,7 @@ class TodoApp:
             relief="flat",
             borderwidth=0,
         )
-        # Custom flat scrollbar — used by sidebar and Settings dialog
-        # Explicit layout overrides any OS/maximize-triggered theme reset
+        # Flat custom scrollbar — immune to maximize resets
         style.layout("Flat.Vertical.TScrollbar", [
             ("Vertical.Scrollbar.trough", {
                 "sticky": "ns",
@@ -918,7 +1183,57 @@ class TodoApp:
                 ("!active",  t["border"]),
             ],
         )
+
+        # ── ttkbootstrap-specific enhancements ────────────────────────────────
+        try:
+            import ttkbootstrap as _bs
+            # Rounded accent buttons via bootstyle
+            style.configure(
+                "Accent.TButton",
+                font=("TkDefaultFont", 10, "bold"),
+                padding=(12, 6),
+            )
+            # Modern entry fields
+            style.configure(
+                "TEntry",
+                fieldbackground=t["entry_bg"],
+                foreground=t["fg"],
+                insertcolor=t["fg"],
+                bordercolor=t["border"],
+                lightcolor=t["border"],
+                darkcolor=t["border"],
+            )
+            # Combobox matches entry
+            style.configure(
+                "TCombobox",
+                fieldbackground=t["entry_bg"],
+                foreground=t["fg"],
+                selectbackground=t["accent"],
+                selectforeground=t["accent_fg"],
+            )
+            # Notebook tabs (if used later)
+            style.configure(
+                "TNotebook",
+                background=t["bg"],
+                tabmargins=[2, 4, 0, 0],
+            )
+            style.configure(
+                "TNotebook.Tab",
+                background=t["surface"],
+                foreground=t["muted_fg"],
+                padding=[12, 6],
+                font=("TkDefaultFont", 9),
+            )
+            style.map(
+                "TNotebook.Tab",
+                background=[("selected", t["surface2"])],
+                foreground=[("selected", t["fg"])],
+            )
+        except ImportError:
+            pass   # ttkbootstrap not installed — base theme only
+        self._tags_configured = False
         self._configure_tags()
+        self._tags_configured = True
 
     def _configure_tags(self):
         if self.dark_mode:
@@ -936,12 +1251,22 @@ class TodoApp:
             self.task_tree.tag_configure("medium",  foreground="#B45309")
             self.task_tree.tag_configure("low",     foreground="#4D7C5F")
 
+    def _save_async(self):
+        """Save tasks in a background thread — non-blocking for the UI."""
+        t = threading.Thread(
+            target=save_tasks,
+            args=(self.manager, self.username, self.enc_key),
+            kwargs={"workspace": self.workspace},
+            daemon=True,
+        )
+        t.start()
+
     def save_ui_config(self):
         save_config({
-            "dark_mode":  self.dark_mode,
-            "sort":       self.sort_type.get(),
-            "filter":     self.filter_type.get(),
-            "geometry":   self.root.geometry(),
+            "dark_mode":         self.dark_mode,
+            "sort":              self.sort_type.get(),
+            "filter":            self.filter_type.get(),
+            "geometry":          self.root.geometry(),
             "categories":        self.categories,
             "category_colors":   self.category_colors,
             "minimize_to_tray":  self.minimize_to_tray,
@@ -952,6 +1277,423 @@ class TodoApp:
     # ═══════════════════════════════════════════════
     #  CATEGORIES
     # ═══════════════════════════════════════════════
+
+    def _build_workspace_chip(self):
+        """Workspace selector pill in the header."""
+        from core.workspaces import list_workspaces
+        t = DARK_THEME if self.dark_mode else LIGHT_THEME
+        wss = list_workspaces(self.username)
+        ws_colors = {w["name"]: w.get("color", t["accent"]) for w in wss}
+
+        if hasattr(self, "_ws_chip") and self._ws_chip:
+            try: self._ws_chip.destroy()
+            except: pass
+
+        chip = tk.Frame(self.header_frame, bg=t["surface"], cursor="hand2")
+        chip.pack(side=tk.RIGHT, padx=(0, 8))
+        self._ws_chip = chip
+
+        color = ws_colors.get(self.workspace, t["accent"])
+        dot = tk.Label(chip, text="●", font=("TkDefaultFont", 10),
+                       bg=t["surface"], fg=color)
+        dot.pack(side=tk.LEFT, padx=(8, 4), pady=6)
+        lbl = tk.Label(chip, text=self.workspace,
+                       font=("TkDefaultFont", 10, "bold"),
+                       bg=t["surface"], fg=t["fg"])
+        lbl.pack(side=tk.LEFT)
+        arrow = tk.Label(chip, text="▾", font=("TkDefaultFont", 9),
+                         bg=t["surface"], fg=t["muted_fg"])
+        arrow.pack(side=tk.LEFT, padx=(2, 8), pady=6)
+
+        def _show_menu(event=None):
+            menu = tk.Menu(self.root, tearoff=0,
+                           bg=t["surface2"], fg=t["fg"],
+                           activebackground=t["accent"],
+                           activeforeground=t["accent_fg"],
+                           relief="flat", bd=0)
+            for ws in wss:
+                n = ws["name"]
+                menu.add_command(
+                    label=("✓  " if n == self.workspace else "     ") + n,
+                    command=lambda name=n: self._switch_workspace(name),
+                )
+            menu.add_separator()
+            menu.add_command(label="⚙  Manage Workspaces…",
+                             command=self.open_workspaces_gui)
+            try:
+                menu.tk_popup(chip.winfo_rootx(),
+                              chip.winfo_rooty() + chip.winfo_height())
+            finally:
+                menu.grab_release()
+
+        for w in (chip, dot, lbl, arrow):
+            w.bind("<Button-1>", _show_menu)
+
+    def _switch_workspace(self, name: str):
+        """Save current workspace, load the new one, refresh."""
+        from core.workspaces import set_active_workspace
+        # Save current tasks first
+        save_tasks(self.manager, self.username, self.enc_key,
+                   workspace=self.workspace)
+        # Switch
+        self.workspace = name
+        if self.username:
+            set_active_workspace(self.username, name)
+        # Reload tasks for new workspace
+        self.manager.tasks.clear()
+        self.history = CommandHistory()
+        load_tasks(self.manager, self.username, self.enc_key,
+                   workspace=self.workspace)
+        self._update_title()
+        self._build_workspace_chip()
+        self.refresh_tasks()
+        self.refresh_stats()
+
+    def open_workspaces_gui(self):
+        """Workspace management dialog — list, create, edit, delete."""
+        from core.workspaces import (list_workspaces, create_workspace,
+                                     delete_workspace, update_workspace)
+        t   = DARK_THEME if self.dark_mode else LIGHT_THEME
+        top = self._make_dialog("📁  Workspaces")
+        top.geometry("520x580")
+        top.resizable(False, True)
+
+        err_col = "#F87171" if self.dark_mode else "#DC2626"
+        ok_col  = "#4ADE80" if self.dark_mode else "#16A34A"
+
+        _COLORS = ["#E07A47","#4A9EE0","#6EE7A0","#FCD34D","#C084FC","#F87171","#38BDF8","#A78BFA"]
+
+        # ── Header ────────────────────────────────────────────────────────────
+        hdr = tk.Frame(top, bg=t["surface"])
+        hdr.pack(fill=tk.X)
+        tk.Label(hdr, text="📁  Workspaces",
+                 font=("TkDefaultFont", 12, "bold"),
+                 bg=t["surface"], fg=t["fg"]).pack(anchor="w", padx=16, pady=(12, 2))
+        tk.Label(hdr, text="Each workspace keeps its own independent task list",
+                 font=("TkDefaultFont", 9), bg=t["surface"],
+                 fg=t["muted_fg"]).pack(anchor="w", padx=16, pady=(0, 10))
+        tk.Frame(top, height=1, bg=t["border"]).pack(fill=tk.X)
+
+        # ── Scrollable workspace list ─────────────────────────────────────────
+        list_canvas_frame = tk.Frame(top, bg=t["bg"])
+        list_canvas_frame.pack(fill=tk.BOTH, expand=True, padx=14, pady=(10, 0))
+
+        list_canvas = tk.Canvas(list_canvas_frame, bg=t["bg"],
+                                highlightthickness=0, bd=0)
+        list_scroll  = ttk.Scrollbar(list_canvas_frame, orient=tk.VERTICAL,
+                                     command=list_canvas.yview,
+                                     style="Flat.Vertical.TScrollbar")
+        list_canvas.configure(yscrollcommand=list_scroll.set)
+        list_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        list_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        list_inner = tk.Frame(list_canvas, bg=t["bg"])
+        list_win   = list_canvas.create_window((0,0), window=list_inner, anchor="nw")
+        list_canvas.bind("<Configure>", lambda e: list_canvas.itemconfig(list_win, width=e.width))
+        list_inner.bind("<Configure>", lambda e: list_canvas.configure(
+            scrollregion=list_canvas.bbox("all")))
+
+        # Global message label
+        msg_var = tk.StringVar()
+        msg_lbl = tk.Label(top, textvariable=msg_var,
+                           font=("TkDefaultFont", 9),
+                           bg=t["bg"], fg=ok_col, wraplength=480)
+        msg_lbl.pack(anchor="w", padx=14, pady=(2, 0))
+
+        def _set_msg(text, ok=True):
+            msg_var.set(text)
+            msg_lbl.configure(fg=ok_col if ok else err_col)
+            top.after(2500, lambda: msg_var.set(""))
+
+        # ── Edit sub-form (shown inline when editing) ─────────────────────────
+        _editing = {"name": None}   # tracks which workspace is being edited
+
+        def _rebuild():
+            for w in list_inner.winfo_children():
+                w.destroy()
+
+            for ws in list_workspaces(self.username):
+                is_active  = ws["name"] == self.workspace
+                is_default = ws["name"] == "Default"
+                color      = ws.get("color", t["accent"])
+
+                card = tk.Frame(list_inner, bg=t["surface2"],
+                                highlightthickness=1, highlightbackground=t["border"])
+                card.pack(fill=tk.X, pady=3, padx=2)
+
+                # ── Main row ──────────────────────────────────────────────────
+                main_row = tk.Frame(card, bg=t["surface2"])
+                main_row.pack(fill=tk.X, padx=8, pady=6)
+
+                tk.Label(main_row, text="●", fg=color, bg=t["surface2"],
+                         font=("TkDefaultFont", 13)).pack(side=tk.LEFT, padx=(4, 8))
+
+                info_block = tk.Frame(main_row, bg=t["surface2"])
+                info_block.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+                name_row_w = tk.Frame(info_block, bg=t["surface2"])
+                name_row_w.pack(anchor="w")
+                tk.Label(name_row_w,
+                         text=ws["name"] + ("  ✦ active" if is_active else ""),
+                         font=("TkDefaultFont", 10, "bold"),
+                         bg=t["surface2"],
+                         fg=t["accent"] if is_active else t["fg"]).pack(side=tk.LEFT)
+
+                desc = ws.get("description") or ""
+                tk.Label(info_block,
+                         text=desc if desc else "No description",
+                         font=("TkDefaultFont", 8),
+                         bg=t["surface2"],
+                         fg=t["muted_fg"]).pack(anchor="w")
+
+                # ── Action buttons ─────────────────────────────────────────
+                btn_block = tk.Frame(main_row, bg=t["surface2"])
+                btn_block.pack(side=tk.RIGHT, padx=(6, 0))
+
+                if not is_active:
+                    def _switch_ws(n=ws["name"]):
+                        top.destroy()
+                        self._switch_workspace(n)
+                    tk.Button(btn_block, text="Switch",
+                              command=_switch_ws,
+                              bg=t["accent"], fg=t["accent_fg"],
+                              relief=tk.FLAT, cursor="hand2",
+                              font=("TkDefaultFont", 8, "bold"),
+                              padx=8, pady=3).pack(side=tk.LEFT, padx=2)
+
+                def _toggle_edit(n=ws["name"], c=card):
+                    # Show/hide inline edit panel for this card
+                    edit_frame = getattr(c, "_edit_frame", None)
+                    if edit_frame and edit_frame.winfo_exists():
+                        edit_frame.destroy()
+                        c._edit_frame = None
+                    else:
+                        _show_edit_panel(c, n)
+
+                tk.Button(btn_block, text="✎ Edit",
+                          command=_toggle_edit,
+                          bg=t["surface"], fg=t["fg"],
+                          relief=tk.FLAT, cursor="hand2",
+                          font=("TkDefaultFont", 8),
+                          padx=6, pady=3).pack(side=tk.LEFT, padx=2)
+
+                if not is_default:
+                    def _del(n=ws["name"]):
+                        if messagebox.askyesno("Delete workspace",
+                                f"Delete workspace '{n}'?\n"
+                                "Its task file will also be deleted.",
+                                parent=top):
+                            try:
+                                delete_workspace(self.username, n)
+                                _rebuild()
+                                _set_msg(f"✓ '{n}' deleted.")
+                                self._build_workspace_chip()
+                            except Exception as e:
+                                _set_msg(str(e), ok=False)
+                    tk.Button(btn_block, text="🗑",
+                              command=_del,
+                              bg=t["surface2"], fg=err_col,
+                              relief=tk.FLAT, cursor="hand2",
+                              font=("TkDefaultFont", 10)).pack(side=tk.LEFT, padx=2)
+
+        def _show_edit_panel(card, ws_name):
+            """Inline edit panel attached to a workspace card."""
+            ws_list = list_workspaces(self.username)
+            ws_data = next((w for w in ws_list if w["name"] == ws_name), {})
+
+            ef = tk.Frame(card, bg=t["surface"],
+                          highlightthickness=1, highlightbackground=t["border"])
+            ef.pack(fill=tk.X, padx=8, pady=(0, 8))
+            card._edit_frame = ef
+
+            tk.Label(ef, text="Edit workspace",
+                     font=("TkDefaultFont", 9, "bold"),
+                     bg=t["surface"], fg=t["fg"]).pack(anchor="w", padx=8, pady=(6, 4))
+
+            # Name field (disabled for Default)
+            fields_row = tk.Frame(ef, bg=t["surface"])
+            fields_row.pack(fill=tk.X, padx=8, pady=(0, 6))
+
+            tk.Label(fields_row, text="Name:", font=("TkDefaultFont", 9),
+                     bg=t["surface"], fg=t["muted_fg"], width=6, anchor="w").grid(
+                row=0, column=0, sticky="w", pady=3)
+            name_var = tk.StringVar(value=ws_data.get("name", ""))
+            name_e = tk.Entry(fields_row, textvariable=name_var, width=22,
+                              bg=t["entry_bg"], fg=t["fg"],
+                              insertbackground=t["fg"], relief=tk.FLAT,
+                              font=("TkDefaultFont", 9),
+                              highlightthickness=1, highlightbackground=t["border"],
+                              state="disabled" if ws_name == "Default" else "normal")
+            name_e.grid(row=0, column=1, sticky="w", padx=(4, 0), pady=3)
+
+            tk.Label(fields_row, text="Desc:", font=("TkDefaultFont", 9),
+                     bg=t["surface"], fg=t["muted_fg"], width=6, anchor="w").grid(
+                row=1, column=0, sticky="w", pady=3)
+            desc_var = tk.StringVar(value=ws_data.get("description", ""))
+            tk.Entry(fields_row, textvariable=desc_var, width=22,
+                     bg=t["entry_bg"], fg=t["fg"],
+                     insertbackground=t["fg"], relief=tk.FLAT,
+                     font=("TkDefaultFont", 9),
+                     highlightthickness=1, highlightbackground=t["border"]
+                     ).grid(row=1, column=1, sticky="w", padx=(4, 0), pady=3)
+
+            # Color picker
+            tk.Label(fields_row, text="Color:", font=("TkDefaultFont", 9),
+                     bg=t["surface"], fg=t["muted_fg"], width=6, anchor="w").grid(
+                row=2, column=0, sticky="w", pady=3)
+            col_frame = tk.Frame(fields_row, bg=t["surface"])
+            col_frame.grid(row=2, column=1, sticky="w", padx=(4, 0), pady=3)
+            cur_color = ws_data.get("color", _COLORS[0])
+            col_var = tk.StringVar(value=cur_color)
+
+            def _pick_color(cc, col_frame=col_frame, col_var=col_var):
+                col_var.set(cc)
+                for w in col_frame.winfo_children():
+                    w.configure(relief="sunken" if w["bg"] == cc else "flat")
+
+            for c in _COLORS:
+                relief = "sunken" if c == cur_color else "flat"
+                b = tk.Label(col_frame, bg=c, width=2, cursor="hand2", relief=relief,
+                             highlightthickness=1,
+                             highlightbackground="white" if c == cur_color else t["border"])
+                b.pack(side=tk.LEFT, padx=1)
+                b.bind("<Button-1>", lambda e, cc=c: _pick_color(cc))
+
+            edit_msg = tk.StringVar()
+            tk.Label(ef, textvariable=edit_msg, font=("TkDefaultFont", 8),
+                     bg=t["surface"], fg=err_col).pack(anchor="w", padx=8)
+
+            btn_row_ef = tk.Frame(ef, bg=t["surface"])
+            btn_row_ef.pack(anchor="e", padx=8, pady=(0, 8))
+
+            def _save_edit():
+                new_name = name_var.get().strip() if ws_name != "Default" else ws_name
+                new_desc = desc_var.get().strip()
+                new_col  = col_var.get()
+                try:
+                    update_workspace(self.username, ws_name,
+                                     new_name=new_name if new_name != ws_name else None,
+                                     description=new_desc,
+                                     color=new_col)
+                    # If active workspace was renamed, update app state
+                    if self.workspace == ws_name and new_name != ws_name:
+                        self.workspace = new_name
+                        self._update_title()
+                    self._build_workspace_chip()
+                    _rebuild()
+                    _set_msg(f"✓ '{new_name}' updated.")
+                except Exception as e:
+                    edit_msg.set(str(e))
+
+            tk.Button(btn_row_ef, text="Save", command=_save_edit,
+                      bg=t["accent"], fg=t["accent_fg"],
+                      relief=tk.FLAT, cursor="hand2",
+                      font=("TkDefaultFont", 8, "bold"),
+                      padx=8).pack(side=tk.LEFT, padx=(0, 4))
+            tk.Button(btn_row_ef, text="Cancel",
+                      command=lambda: ef.destroy(),
+                      bg=t["surface2"], fg=t["fg"],
+                      relief=tk.FLAT, cursor="hand2",
+                      font=("TkDefaultFont", 8),
+                      padx=8).pack(side=tk.LEFT)
+
+        _rebuild()
+
+        # ── Create new workspace ──────────────────────────────────────────────
+        tk.Frame(top, height=1, bg=t["border"]).pack(fill=tk.X, padx=0, pady=(6, 0))
+        new_frame = tk.Frame(top, bg=t["surface"])
+        new_frame.pack(fill=tk.X, padx=0, pady=0)
+
+        tk.Label(new_frame, text="Create new workspace",
+                 font=("TkDefaultFont", 10, "bold"),
+                 bg=t["surface"], fg=t["fg"]).pack(anchor="w", padx=16, pady=(10, 6))
+
+        fields = tk.Frame(new_frame, bg=t["surface"])
+        fields.pack(fill=tk.X, padx=16, pady=(0, 6))
+
+        # Row 1: Name + Description
+        r1 = tk.Frame(fields, bg=t["surface"])
+        r1.pack(fill=tk.X, pady=2)
+        tk.Label(r1, text="Name:", font=("TkDefaultFont", 9),
+                 bg=t["surface"], fg=t["muted_fg"], width=6, anchor="w").pack(side=tk.LEFT)
+        new_name_var = tk.StringVar()
+        new_name_e = tk.Entry(r1, textvariable=new_name_var, width=18,
+                              bg=t["entry_bg"], fg=t["fg"],
+                              insertbackground=t["fg"], relief=tk.FLAT,
+                              font=("TkDefaultFont", 9),
+                              highlightthickness=1, highlightbackground=t["border"])
+        new_name_e.pack(side=tk.LEFT, padx=(4, 12))
+        tk.Label(r1, text="Desc:", font=("TkDefaultFont", 9),
+                 bg=t["surface"], fg=t["muted_fg"], width=5, anchor="w").pack(side=tk.LEFT)
+        new_desc_var = tk.StringVar()
+        tk.Entry(r1, textvariable=new_desc_var, width=18,
+                 bg=t["entry_bg"], fg=t["fg"],
+                 insertbackground=t["fg"], relief=tk.FLAT,
+                 font=("TkDefaultFont", 9),
+                 highlightthickness=1, highlightbackground=t["border"]
+                 ).pack(side=tk.LEFT, padx=(4, 0))
+
+        # Row 2: Colour + Create button
+        r2 = tk.Frame(fields, bg=t["surface"])
+        r2.pack(fill=tk.X, pady=4)
+        tk.Label(r2, text="Color:", font=("TkDefaultFont", 9),
+                 bg=t["surface"], fg=t["muted_fg"], width=6, anchor="w").pack(side=tk.LEFT)
+        col_picker = tk.Frame(r2, bg=t["surface"])
+        col_picker.pack(side=tk.LEFT, padx=(4, 12))
+        new_col_var = tk.StringVar(value=_COLORS[1])
+
+        def _pick_new(cc):
+            new_col_var.set(cc)
+            for w in col_picker.winfo_children():
+                w.configure(relief="sunken" if w["bg"] == cc else "flat",
+                             highlightbackground="white" if w["bg"] == cc else t["border"])
+
+        for c in _COLORS:
+            b = tk.Label(col_picker, bg=c, width=2, cursor="hand2",
+                         relief="sunken" if c == _COLORS[1] else "flat",
+                         highlightthickness=1,
+                         highlightbackground="white" if c == _COLORS[1] else t["border"])
+            b.pack(side=tk.LEFT, padx=1)
+            b.bind("<Button-1>", lambda e, cc=c: _pick_new(cc))
+
+        def _create():
+            name = new_name_var.get().strip()
+            if not name:
+                _set_msg("Enter a workspace name.", ok=False)
+                return
+            try:
+                create_workspace(self.username, name,
+                                 description=new_desc_var.get().strip(),
+                                 color=new_col_var.get())
+                new_name_var.set("")
+                new_desc_var.set("")
+                _rebuild()
+                _set_msg(f"✓ '{name}' created.")
+                self._build_workspace_chip()
+            except Exception as e:
+                _set_msg(str(e), ok=False)
+
+        tk.Button(r2, text="Create workspace", command=_create,
+                  bg=t["accent"], fg=t["accent_fg"],
+                  activebackground=t["accent_hover"],
+                  relief=tk.FLAT, cursor="hand2",
+                  font=("TkDefaultFont", 9, "bold"), padx=10, pady=4).pack(side=tk.LEFT)
+        new_name_e.bind("<Return>", lambda e: _create())
+
+        # ── Footer ────────────────────────────────────────────────────────────
+        tk.Frame(top, height=1, bg=t["border"]).pack(fill=tk.X)
+        foot = tk.Frame(top, bg=t["surface"], height=50)
+        foot.pack(fill=tk.X, side=tk.BOTTOM)
+        foot.pack_propagate(False)
+        tk.Button(foot, text="Close", command=top.destroy,
+                  relief="flat", cursor="hand2",
+                  bg=t["accent"], fg=t["accent_fg"],
+                  font=("TkDefaultFont", 10, "bold")
+                  ).place(x=14, y=8, relwidth=1.0, width=-28, height=34)
+
+    def _update_title(self):
+        ws_suffix = f"  ·  {self.workspace}" if self.workspace != "Default" else ""
+        base = f"My Tasks — {self.username}" if self.username else "My Tasks"
+        self.root.title(f"{base}{ws_suffix}")
 
     def _build_user_chip(self):
         """Build the username/email chip in the header (right of Add Task)."""
@@ -1167,7 +1909,7 @@ class TodoApp:
                 # Re-derive session key with new password and re-encrypt tasks
                 from core.auth import get_encryption_key as _gek
                 self.enc_key = _gek(self.username.strip().lower(), new_pw.get())
-                save_tasks(self.manager, self.username, self.enc_key)
+                self._save_async()
                 cur_pw.set(""); new_pw.set(""); conf_pw.set("")
                 pw_msg.set("✓ Password updated. Tasks re-encrypted.")
                 top.after(2000, lambda: pw_msg.set(""))
@@ -1486,7 +2228,7 @@ class TodoApp:
                 existing_names.add(name.lower())
                 added += 1
 
-            save_tasks(self.manager, self.username, self.enc_key)
+            self._save_async()
             self.refresh_tasks()
 
             parts = [f"{added} imported"]
@@ -1770,6 +2512,1134 @@ class TodoApp:
 
         top.geometry("380x460")
 
+    def open_analytics_view(self):
+        """Advanced Analytics window — pure-canvas charts, no external deps."""
+        from datetime import date, datetime as _dt, timedelta
+        from collections import defaultdict, Counter
+        import math
+
+        t    = DARK_THEME if self.dark_mode else LIGHT_THEME
+        top  = tk.Toplevel(self.root)
+        top.title("📈  Advanced Analytics")
+        top.configure(bg=t["bg"])
+        top.geometry("920x680")
+        top.resizable(True, True)
+
+        tasks = self.manager.tasks
+        today = date.today()
+
+        # ── Palette ────────────────────────────────────────────────────────────
+        ACCENT   = t["accent"]
+        MUTED    = t["muted_fg"]
+        FG       = t["fg"]
+        BG       = t["bg"]
+        SURF     = t["surface"]
+        SURF2    = t["surface2"]
+        BORDER   = t["border"]
+        CHART_COLORS = [
+            "#E07A47","#4A9EE0","#6EE7A0","#FCD34D",
+            "#C084FC","#F87171","#34D399","#60A5FA",
+        ]
+        GREEN  = "#4ADE80"
+        RED    = "#F87171"
+        YELLOW = "#FCD34D"
+
+        # ── Header ─────────────────────────────────────────────────────────────
+        hdr = tk.Frame(top, bg=SURF)
+        hdr.pack(fill=tk.X)
+        tk.Label(hdr, text="📈  Advanced Analytics",
+                 font=("TkDefaultFont", 13, "bold"),
+                 bg=SURF, fg=FG).pack(side=tk.LEFT, padx=16, pady=12)
+        tk.Label(hdr, text=f"Based on {len(tasks)} tasks  •  {today.strftime('%d %b %Y')}",
+                 font=("TkDefaultFont", 9), bg=SURF, fg=MUTED).pack(side=tk.LEFT, padx=8)
+        tk.Frame(top, height=1, bg=BORDER).pack(fill=tk.X)
+
+        # ── Scrollable body ─────────────────────────────────────────────────────
+        outer  = tk.Frame(top, bg=BG)
+        outer.pack(fill=tk.BOTH, expand=True)
+        vscroll = ttk.Scrollbar(outer, orient=tk.VERTICAL,
+                                style="Flat.Vertical.TScrollbar")
+        vscroll.pack(side=tk.RIGHT, fill=tk.Y)
+        main_canvas = tk.Canvas(outer, bg=BG, highlightthickness=0, bd=0,
+                                yscrollcommand=vscroll.set)
+        main_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        vscroll.configure(command=main_canvas.yview)
+        body = tk.Frame(main_canvas, bg=BG)
+        bwin = main_canvas.create_window((0, 0), window=body, anchor="nw")
+        main_canvas.bind("<Configure>", lambda e: main_canvas.itemconfig(bwin, width=e.width))
+        body.bind("<Configure>", lambda e: main_canvas.configure(
+            scrollregion=main_canvas.bbox("all")))
+        def _mw(e): main_canvas.yview_scroll(int(-1*(e.delta/120)), "units")
+        main_canvas.bind("<Enter>", lambda e: main_canvas.bind_all("<MouseWheel>", _mw))
+        main_canvas.bind("<Leave>", lambda e: main_canvas.unbind_all("<MouseWheel>"))
+
+        # ── Chart helpers ───────────────────────────────────────────────────────
+        def _frame(title, h=220):
+            """Titled chart card."""
+            card = tk.Frame(body, bg=SURF, highlightthickness=1,
+                            highlightbackground=BORDER)
+            card.pack(fill=tk.X, padx=14, pady=8)
+            hrow = tk.Frame(card, bg=SURF)
+            hrow.pack(fill=tk.X, padx=10, pady=(8, 2))
+            tk.Label(hrow, text=title, font=("TkDefaultFont", 10, "bold"),
+                     bg=SURF, fg=FG).pack(side=tk.LEFT)
+            cv = tk.Canvas(card, height=h, bg=SURF,
+                           highlightthickness=0, bd=0)
+            cv.pack(fill=tk.X, padx=10, pady=(4, 10))
+            return cv
+
+        def _bar_chart(cv, labels, values, colors=None, max_val=None, horizontal=False):
+            """Draw a bar chart on canvas cv. Binds resize."""
+            if not values or max(values) == 0:
+                cv.create_text(10, cv.winfo_reqheight()//2,
+                               text="No data", anchor="w", fill=MUTED,
+                               font=("TkDefaultFont", 9))
+                return
+            def _draw(w, h):
+                cv.delete("all")
+                mv  = max_val or max(values)
+                PAD = 36
+                n   = len(labels)
+                if horizontal:
+                    row_h  = (h - PAD) // max(n, 1)
+                    bar_h  = int(row_h * 0.55)
+                    for i, (lbl, val) in enumerate(zip(labels, values)):
+                        y   = PAD + i * row_h + (row_h - bar_h) // 2
+                        bw  = int((w - PAD - 80) * (val / mv))
+                        col = (colors[i % len(colors)] if colors else ACCENT)
+                        cv.create_rectangle(80, y, 80 + bw, y + bar_h,
+                                            fill=col, outline="")
+                        cv.create_text(76, y + bar_h // 2, text=str(lbl),
+                                       anchor="e", fill=MUTED,
+                                       font=("TkDefaultFont", 8))
+                        cv.create_text(82 + bw, y + bar_h // 2, text=str(val),
+                                       anchor="w", fill=FG,
+                                       font=("TkDefaultFont", 8))
+                else:
+                    col_w  = (w - PAD) // max(n, 1)
+                    bar_w  = max(4, int(col_w * 0.6))
+                    for i, (lbl, val) in enumerate(zip(labels, values)):
+                        x   = PAD + i * col_w + (col_w - bar_w) // 2
+                        bh  = int((h - PAD - 16) * (val / mv))
+                        col = (colors[i % len(colors)] if colors else ACCENT)
+                        cv.create_rectangle(x, h - PAD - bh, x + bar_w, h - PAD,
+                                            fill=col, outline="")
+                        cv.create_text(x + bar_w // 2, h - PAD + 4,
+                                       text=str(lbl)[:6], anchor="n",
+                                       fill=MUTED, font=("TkDefaultFont", 7))
+                        cv.create_text(x + bar_w // 2, h - PAD - bh - 4,
+                                       text=str(val), anchor="s",
+                                       fill=FG, font=("TkDefaultFont", 8))
+                    # Baseline
+                    cv.create_line(PAD, h - PAD, w, h - PAD, fill=BORDER)
+            cv.update_idletasks()
+            _draw(cv.winfo_width() or 860, cv.winfo_height())
+            cv.bind("<Configure>", lambda e: _draw(e.width, e.height))
+
+        def _donut(cv, slices, labels):
+            """Slices: list of (value, color). Centered donut + legend."""
+            def _draw(w, h):
+                cv.delete("all")
+                total = sum(s[0] for s in slices)
+                if total == 0:
+                    cv.create_text(w//2, h//2, text="No data",
+                                   fill=MUTED, font=("TkDefaultFont", 9))
+                    return
+                cx, cy = w // 3, h // 2
+                R, r   = min(cx, h//2) - 16, min(cx, h//2) - 42
+                start  = -90.0
+                for (val, col), lbl in zip(slices, labels):
+                    extent = 360.0 * val / total
+                    cv.create_arc(cx - R, cy - R, cx + R, cy + R,
+                                  start=start, extent=extent,
+                                  fill=col, outline=SURF, width=2)
+                    start += extent
+                # Hole
+                cv.create_oval(cx - r, cy - r, cx + r, cy + r,
+                               fill=SURF, outline=SURF)
+                # Centre text
+                cv.create_text(cx, cy - 8, text=str(total),
+                               font=("TkDefaultFont", 13, "bold"), fill=FG)
+                cv.create_text(cx, cy + 10, text="total",
+                               font=("TkDefaultFont", 8), fill=MUTED)
+                # Legend
+                lx, ly = cx + R + 20, cy - len(slices) * 13
+                for (val, col), lbl in zip(slices, labels):
+                    pct = int(val / total * 100)
+                    cv.create_rectangle(lx, ly, lx+12, ly+12, fill=col, outline="")
+                    cv.create_text(lx + 16, ly + 6,
+                                   text=f"{lbl}  {val} ({pct}%)",
+                                   anchor="w", fill=FG,
+                                   font=("TkDefaultFont", 9))
+                    ly += 22
+            cv.update_idletasks()
+            _draw(cv.winfo_width() or 860, cv.winfo_height())
+            cv.bind("<Configure>", lambda e: _draw(e.width, e.height))
+
+        def _line_chart(cv, series, x_labels=None, ylabel=""):
+            """Multi-line chart. series = [(label, [y_vals], color)]"""
+            def _draw(w, h):
+                cv.delete("all")
+                if not series:
+                    return
+                all_vals = [v for _, vals, _ in series for v in vals]
+                if not all_vals:
+                    return
+                mv   = max(all_vals) or 1
+                PAD  = 40
+                n    = len(series[0][1])
+                if n < 2:
+                    return
+                step = (w - PAD - 10) / (n - 1)
+                # Grid lines
+                for i in range(5):
+                    y = PAD + i * (h - PAD - 10) // 4
+                    cv.create_line(PAD, y, w - 10, y, fill=BORDER, dash=(2, 4))
+                    cv.create_text(PAD - 4, y, text=str(int(mv * (4-i) / 4)),
+                                   anchor="e", fill=MUTED, font=("TkDefaultFont", 7))
+                # X labels
+                if x_labels:
+                    step_lbl = max(1, n // 10)
+                    for i, lbl in enumerate(x_labels):
+                        if i % step_lbl == 0:
+                            x = PAD + i * step
+                            cv.create_text(x, h - 6, text=str(lbl)[:5],
+                                           anchor="s", fill=MUTED,
+                                           font=("TkDefaultFont", 7))
+                # Lines + dots
+                for _, vals, col in series:
+                    points = []
+                    for i, v in enumerate(vals):
+                        x = PAD + i * step
+                        y = PAD + (h - PAD - 10) * (1 - v / mv)
+                        points.extend([x, y])
+                    if len(points) >= 4:
+                        cv.create_line(*points, fill=col, width=2, smooth=True)
+                    for i, v in enumerate(vals):
+                        x = PAD + i * step
+                        y = PAD + (h - PAD - 10) * (1 - v / mv)
+                        cv.create_oval(x-3, y-3, x+3, y+3, fill=col, outline=SURF)
+                cv.create_line(PAD, PAD, PAD, h - 10, fill=BORDER)
+                cv.create_line(PAD, h - 10, w - 10, h - 10, fill=BORDER)
+            cv.update_idletasks()
+            _draw(cv.winfo_width() or 860, cv.winfo_height())
+            cv.bind("<Configure>", lambda e: _draw(e.width, e.height))
+
+        # ══════════════════════════════════════════════════════════════════════
+        # ── KPI tiles row ────────────────────────────────────────────────────
+        # ══════════════════════════════════════════════════════════════════════
+        total     = len(tasks)
+        done      = sum(1 for t2 in tasks if t2.done)
+        active    = total - done
+        overdue   = sum(1 for t2 in tasks
+                        if not t2.done and t2.due_date and t2.due_date < today)
+        due_today = sum(1 for t2 in tasks
+                        if not t2.done and t2.due_date and t2.due_date == today)
+        pct       = round(done / total * 100, 1) if total else 0
+        with_sub  = sum(1 for t2 in tasks if getattr(t2, "subtasks", []))
+        total_sub = sum(len(getattr(t2, "subtasks", [])) for t2 in tasks)
+        avg_sub   = round(total_sub / with_sub, 1) if with_sub else 0
+
+        # Avg completion days
+        durations = []
+        for t2 in tasks:
+            if t2.done and t2.completed_at and t2.created_at:
+                try:
+                    c = _dt.strptime(t2.created_at[:10], "%Y-%m-%d").date()
+                    d = _dt.strptime(t2.completed_at[:10], "%Y-%m-%d").date()
+                    durations.append((d - c).days)
+                except Exception:
+                    pass
+        avg_days = round(sum(durations) / len(durations), 1) if durations else "—"
+
+        kpi_frame = tk.Frame(body, bg=BG)
+        kpi_frame.pack(fill=tk.X, padx=14, pady=(10, 2))
+        for title, value, color in [
+            ("Total Tasks",      total,     FG),
+            ("Completed",        f"{done} ({pct}%)",  GREEN),
+            ("Active",           active,    ACCENT),
+            ("Overdue",          overdue,   RED),
+            ("Due Today",        due_today, YELLOW),
+            ("Avg Complete",     f"{avg_days}d", MUTED),
+        ]:
+            tile = tk.Frame(kpi_frame, bg=SURF2,
+                            highlightthickness=1, highlightbackground=BORDER)
+            tile.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
+            tk.Label(tile, text=str(value),
+                     font=("TkDefaultFont", 18, "bold"),
+                     bg=SURF2, fg=color).pack(pady=(10, 0))
+            tk.Label(tile, text=title,
+                     font=("TkDefaultFont", 8),
+                     bg=SURF2, fg=MUTED).pack(pady=(0, 10))
+
+        # ══════════════════════════════════════════════════════════════════════
+        # ── Row 1: Completion trend (last 30 days) + Category donut
+        # ══════════════════════════════════════════════════════════════════════
+        row1 = tk.Frame(body, bg=BG)
+        row1.pack(fill=tk.X, padx=14, pady=4)
+
+        # Completion trend
+        trend_card = tk.Frame(row1, bg=SURF, highlightthickness=1,
+                              highlightbackground=BORDER)
+        trend_card.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 6))
+        tk.Label(trend_card, text="📅  Tasks Completed — Last 30 Days",
+                 font=("TkDefaultFont", 10, "bold"), bg=SURF, fg=FG).pack(
+            anchor="w", padx=10, pady=(8, 2))
+        trend_cv = tk.Canvas(trend_card, height=200, bg=SURF,
+                             highlightthickness=0, bd=0)
+        trend_cv.pack(fill=tk.X, padx=10, pady=(4, 10))
+
+        completed_by_day = defaultdict(int)
+        created_by_day   = defaultdict(int)
+        for t2 in tasks:
+            if t2.completed_at:
+                try:
+                    d = _dt.strptime(t2.completed_at[:10], "%Y-%m-%d").date()
+                    if (today - d).days <= 30:
+                        completed_by_day[d] += 1
+                except Exception: pass
+            try:
+                d = _dt.strptime(t2.created_at[:10], "%Y-%m-%d").date()
+                if (today - d).days <= 30:
+                    created_by_day[d] += 1
+            except Exception: pass
+
+        days30 = [(today - timedelta(days=29-i)) for i in range(30)]
+        completed_vals = [completed_by_day.get(d, 0) for d in days30]
+        created_vals   = [created_by_day.get(d,   0) for d in days30]
+        xlbls = [d.strftime("%d") for d in days30]
+        _line_chart(trend_cv, [
+            ("Completed", completed_vals, GREEN),
+            ("Created",   created_vals,   ACCENT),
+        ], x_labels=xlbls)
+
+        # Category donut
+        cat_card = tk.Frame(row1, bg=SURF, highlightthickness=1,
+                            highlightbackground=BORDER)
+        cat_card.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        tk.Label(cat_card, text="🏷  Tasks by Category",
+                 font=("TkDefaultFont", 10, "bold"), bg=SURF, fg=FG).pack(
+            anchor="w", padx=10, pady=(8, 2))
+        cat_cv = tk.Canvas(cat_card, height=200, bg=SURF,
+                           highlightthickness=0, bd=0)
+        cat_cv.pack(fill=tk.X, padx=10, pady=(4, 10))
+
+        cat_counts = Counter(getattr(t2, "category", "General") for t2 in tasks)
+        cat_items  = cat_counts.most_common()
+        _donut(cat_cv,
+               [(v, CHART_COLORS[i % len(CHART_COLORS)]) for i, (k, v) in enumerate(cat_items)],
+               [k for k, v in cat_items])
+
+        # ══════════════════════════════════════════════════════════════════════
+        # ── Row 2: Priority breakdown + Completion by weekday
+        # ══════════════════════════════════════════════════════════════════════
+        row2 = tk.Frame(body, bg=BG)
+        row2.pack(fill=tk.X, padx=14, pady=4)
+
+        # Priority donut
+        prio_card = tk.Frame(row2, bg=SURF, highlightthickness=1,
+                             highlightbackground=BORDER)
+        prio_card.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 6))
+        tk.Label(prio_card, text="🔥  Priority Distribution",
+                 font=("TkDefaultFont", 10, "bold"), bg=SURF, fg=FG).pack(
+            anchor="w", padx=10, pady=(8, 2))
+        prio_cv = tk.Canvas(prio_card, height=200, bg=SURF,
+                            highlightthickness=0, bd=0)
+        prio_cv.pack(fill=tk.X, padx=10, pady=(4, 10))
+        pc = Counter(t2.priority for t2 in tasks)
+        _donut(prio_cv, [
+            (pc.get("High",   0), RED),
+            (pc.get("Medium", 0), YELLOW),
+            (pc.get("Low",    0), GREEN),
+        ], ["High", "Medium", "Low"])
+
+        # Completion by day of week
+        dow_card = tk.Frame(row2, bg=SURF, highlightthickness=1,
+                            highlightbackground=BORDER)
+        dow_card.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        tk.Label(dow_card, text="📆  Completions by Day of Week",
+                 font=("TkDefaultFont", 10, "bold"), bg=SURF, fg=FG).pack(
+            anchor="w", padx=10, pady=(8, 2))
+        dow_cv = tk.Canvas(dow_card, height=200, bg=SURF,
+                           highlightthickness=0, bd=0)
+        dow_cv.pack(fill=tk.X, padx=10, pady=(4, 10))
+        dow_counts = defaultdict(int)
+        for t2 in tasks:
+            if t2.done and t2.completed_at:
+                try:
+                    d = _dt.strptime(t2.completed_at[:10], "%Y-%m-%d")
+                    dow_counts[d.weekday()] += 1
+                except Exception: pass
+        dow_labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        _bar_chart(dow_cv, dow_labels,
+                   [dow_counts.get(i, 0) for i in range(7)],
+                   colors=CHART_COLORS)
+
+        # ══════════════════════════════════════════════════════════════════════
+        # ── Row 3: Monthly completed bar + Overdue aging
+        # ══════════════════════════════════════════════════════════════════════
+        row3 = tk.Frame(body, bg=BG)
+        row3.pack(fill=tk.X, padx=14, pady=4)
+
+        # Monthly completed
+        monthly_card = tk.Frame(row3, bg=SURF, highlightthickness=1,
+                                highlightbackground=BORDER)
+        monthly_card.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 6))
+        tk.Label(monthly_card, text="📊  Completions by Month",
+                 font=("TkDefaultFont", 10, "bold"), bg=SURF, fg=FG).pack(
+            anchor="w", padx=10, pady=(8, 2))
+        monthly_cv = tk.Canvas(monthly_card, height=200, bg=SURF,
+                               highlightthickness=0, bd=0)
+        monthly_cv.pack(fill=tk.X, padx=10, pady=(4, 10))
+        monthly_counts = defaultdict(int)
+        for t2 in tasks:
+            if t2.done and t2.completed_at:
+                try:
+                    d = _dt.strptime(t2.completed_at[:7], "%Y-%m")
+                    monthly_counts[d.strftime("%b %y")] += 1
+                except Exception: pass
+        if monthly_counts:
+            m_keys = sorted(monthly_counts.keys(),
+                            key=lambda s: _dt.strptime(s, "%b %y"))[-12:]
+            _bar_chart(monthly_cv, m_keys,
+                       [monthly_counts[k] for k in m_keys],
+                       colors=[ACCENT])
+
+        # Overdue aging
+        aging_card = tk.Frame(row3, bg=SURF, highlightthickness=1,
+                              highlightbackground=BORDER)
+        aging_card.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        tk.Label(aging_card, text="⚠️  Overdue Aging",
+                 font=("TkDefaultFont", 10, "bold"), bg=SURF, fg=FG).pack(
+            anchor="w", padx=10, pady=(8, 2))
+        aging_cv = tk.Canvas(aging_card, height=200, bg=SURF,
+                             highlightthickness=0, bd=0)
+        aging_cv.pack(fill=tk.X, padx=10, pady=(4, 10))
+        overdue_tasks = [t2 for t2 in tasks
+                         if not t2.done and t2.due_date and t2.due_date < today]
+        buckets = {"1-3d": 0, "4-7d": 0, "8-14d": 0, "15-30d": 0, ">30d": 0}
+        for t2 in overdue_tasks:
+            days_over = (today - t2.due_date).days
+            if days_over <= 3:   buckets["1-3d"]   += 1
+            elif days_over <= 7: buckets["4-7d"]   += 1
+            elif days_over <= 14: buckets["8-14d"] += 1
+            elif days_over <= 30: buckets["15-30d"] += 1
+            else:                buckets[">30d"]   += 1
+        _bar_chart(aging_cv, list(buckets.keys()), list(buckets.values()),
+                   colors=[YELLOW, ACCENT, RED, RED, "#7F1D1D"],
+                   horizontal=True)
+
+        # ══════════════════════════════════════════════════════════════════════
+        # ── Row 4: Top categories horizontal bar + Completion speed histogram
+        # ══════════════════════════════════════════════════════════════════════
+        row4 = tk.Frame(body, bg=BG)
+        row4.pack(fill=tk.X, padx=14, pady=4)
+
+        # Completion rate by category
+        cr_card = tk.Frame(row4, bg=SURF, highlightthickness=1,
+                           highlightbackground=BORDER)
+        cr_card.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 6))
+        tk.Label(cr_card, text="✅  Completion Rate by Category",
+                 font=("TkDefaultFont", 10, "bold"), bg=SURF, fg=FG).pack(
+            anchor="w", padx=10, pady=(8, 2))
+        cr_cv = tk.Canvas(cr_card, height=220, bg=SURF,
+                          highlightthickness=0, bd=0)
+        cr_cv.pack(fill=tk.X, padx=10, pady=(4, 10))
+        cat_done  = defaultdict(int)
+        cat_total = defaultdict(int)
+        for t2 in tasks:
+            cat = getattr(t2, "category", "General")
+            cat_total[cat] += 1
+            if t2.done: cat_done[cat] += 1
+        cr_cats = sorted(cat_total.keys(),
+                         key=lambda c: cat_total[c], reverse=True)[:8]
+        cr_vals = [int(cat_done[c] / cat_total[c] * 100) for c in cr_cats]
+        _bar_chart(cr_cv, cr_cats, cr_vals,
+                   colors=[GREEN if v >= 70 else (YELLOW if v >= 40 else RED)
+                           for v in cr_vals],
+                   max_val=100, horizontal=True)
+
+        # Completion speed histogram
+        spd_card = tk.Frame(row4, bg=SURF, highlightthickness=1,
+                            highlightbackground=BORDER)
+        spd_card.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        tk.Label(spd_card, text="⏱  Completion Speed (days to finish)",
+                 font=("TkDefaultFont", 10, "bold"), bg=SURF, fg=FG).pack(
+            anchor="w", padx=10, pady=(8, 2))
+        spd_cv = tk.Canvas(spd_card, height=220, bg=SURF,
+                           highlightthickness=0, bd=0)
+        spd_cv.pack(fill=tk.X, padx=10, pady=(4, 10))
+        spd_buckets = defaultdict(int)
+        for days in durations:
+            if days == 0:   spd_buckets["0d"]    += 1
+            elif days <= 3: spd_buckets["1-3d"]  += 1
+            elif days <= 7: spd_buckets["4-7d"]  += 1
+            elif days <= 14: spd_buckets["8-14d"] += 1
+            elif days <= 30: spd_buckets["15-30d"] += 1
+            else:            spd_buckets[">30d"]  += 1
+        spd_order = ["0d", "1-3d", "4-7d", "8-14d", "15-30d", ">30d"]
+        _bar_chart(spd_cv, spd_order,
+                   [spd_buckets.get(k, 0) for k in spd_order],
+                   colors=[GREEN, GREEN, YELLOW, YELLOW, ACCENT, RED])
+
+        # ══════════════════════════════════════════════════════════════════════
+        # ── Row 5: Cumulative burndown + Attachment/Recurrence stats
+        # ══════════════════════════════════════════════════════════════════════
+        row5 = tk.Frame(body, bg=BG)
+        row5.pack(fill=tk.X, padx=14, pady=(4, 14))
+
+        burn_card = tk.Frame(row5, bg=SURF, highlightthickness=1,
+                             highlightbackground=BORDER)
+        burn_card.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 6))
+        tk.Label(burn_card, text="📉  Cumulative Burndown (last 60 days)",
+                 font=("TkDefaultFont", 10, "bold"), bg=SURF, fg=FG).pack(
+            anchor="w", padx=10, pady=(8, 2))
+        burn_cv = tk.Canvas(burn_card, height=200, bg=SURF,
+                            highlightthickness=0, bd=0)
+        burn_cv.pack(fill=tk.X, padx=10, pady=(4, 10))
+
+        days60 = [(today - timedelta(days=59-i)) for i in range(60)]
+        created_cum  = []
+        completed_cum = []
+        cc, dc = 0, 0
+        for d in days60:
+            for t2 in tasks:
+                try:
+                    if _dt.strptime(t2.created_at[:10], "%Y-%m-%d").date() == d:
+                        cc += 1
+                except Exception: pass
+                if t2.done and t2.completed_at:
+                    try:
+                        if _dt.strptime(t2.completed_at[:10], "%Y-%m-%d").date() == d:
+                            dc += 1
+                    except Exception: pass
+            created_cum.append(cc)
+            completed_cum.append(dc)
+        xlbls60 = [d.strftime("%d") for d in days60]
+        _line_chart(burn_cv, [
+            ("Total created",   created_cum,   ACCENT),
+            ("Total completed", completed_cum, GREEN),
+        ], x_labels=xlbls60)
+
+        # Feature stats tile
+        feat_card = tk.Frame(row5, bg=SURF, highlightthickness=1,
+                             highlightbackground=BORDER)
+        feat_card.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        tk.Label(feat_card, text="🔬  Feature Usage",
+                 font=("TkDefaultFont", 10, "bold"), bg=SURF, fg=FG).pack(
+            anchor="w", padx=10, pady=(8, 2))
+
+        stats = {
+            "With subtasks":   sum(1 for t2 in tasks if getattr(t2, "subtasks", [])),
+            "Subtasks total":  sum(len(getattr(t2, "subtasks", [])) for t2 in tasks),
+            "With attachment": sum(1 for t2 in tasks if getattr(t2, "attachments", [])),
+            "Recurring":       sum(1 for t2 in tasks if getattr(t2, "recurrence", None)),
+            "  ↳ Daily":       sum(1 for t2 in tasks if getattr(t2, "recurrence","")=="Daily"),
+            "  ↳ Weekly":      sum(1 for t2 in tasks if getattr(t2, "recurrence","")=="Weekly"),
+            "  ↳ Monthly":     sum(1 for t2 in tasks if getattr(t2, "recurrence","")=="Monthly"),
+            "No due date":     sum(1 for t2 in tasks if not t2.due_date),
+            "Completion rate": f"{pct}%",
+        }
+        for k, v in stats.items():
+            r = tk.Frame(feat_card, bg=SURF)
+            r.pack(fill=tk.X, padx=14, pady=2)
+            tk.Label(r, text=k, font=("TkDefaultFont", 9),
+                     bg=SURF, fg=MUTED).pack(side=tk.LEFT)
+            tk.Label(r, text=str(v), font=("TkDefaultFont", 9, "bold"),
+                     bg=SURF, fg=FG).pack(side=tk.RIGHT)
+        # Footer padding
+        tk.Frame(feat_card, bg=SURF, height=10).pack()
+
+    def open_cloud_sync_gui(self):
+        """Cloud sync management dialog."""
+        from services.cloud_sync import PROVIDERS, get_last_sync_info, _load_creds, _save_creds
+        from core.storage import tasks_file
+
+        t   = DARK_THEME if self.dark_mode else LIGHT_THEME
+        top = self._make_dialog("☁️  Cloud Sync")
+        top.geometry("500x560")
+        top.resizable(False, True)
+
+        # ── Header ────────────────────────────────────────────────────────────
+        hdr = tk.Frame(top, bg=t["surface"])
+        hdr.pack(fill=tk.X)
+        tk.Label(hdr, text="☁️  Cloud Sync",
+                 font=("TkDefaultFont", 12, "bold"),
+                 bg=t["surface"], fg=t["fg"]).pack(anchor="w", padx=16, pady=(12, 4))
+        tk.Label(hdr, text="Backup and restore your encrypted task file",
+                 font=("TkDefaultFont", 9), bg=t["surface"],
+                 fg=t["muted_fg"]).pack(anchor="w", padx=16, pady=(0, 10))
+        tk.Frame(top, height=1, bg=t["border"]).pack(fill=tk.X)
+
+        # ── Scrollable body ───────────────────────────────────────────────────
+        canvas_frame = tk.Frame(top, bg=t["bg"])
+        canvas_frame.pack(fill=tk.BOTH, expand=True)
+        canvas   = tk.Canvas(canvas_frame, bg=t["bg"], highlightthickness=0, bd=0)
+        scrollbar = ttk.Scrollbar(canvas_frame, orient="vertical",
+                                  command=canvas.yview,
+                                  style="Flat.Vertical.TScrollbar")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        body = tk.Frame(canvas, bg=t["bg"])
+        bwin = canvas.create_window((0, 0), window=body, anchor="nw")
+        canvas.bind("<Configure>", lambda e: canvas.itemconfig(bwin, width=e.width))
+        body.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        def _mw(e): canvas.yview_scroll(int(-1*(e.delta/120)), "units")
+        canvas.bind("<Enter>", lambda e: canvas.bind_all("<MouseWheel>", _mw))
+        canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
+        pad = tk.Frame(body, bg=t["bg"])
+        pad.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+
+        # ── Determine local task file ─────────────────────────────────────────
+        enc_path   = tasks_file(self.username, encrypted=True)
+        plain_path = tasks_file(self.username, encrypted=False)
+        local_path = enc_path if os.path.exists(enc_path) else plain_path
+        is_enc     = os.path.exists(enc_path)
+
+        tk.Label(pad,
+                 text=f"Local file:  {os.path.basename(local_path)}  "
+                      f"({'🔒 encrypted' if is_enc else '📄 plain JSON'})",
+                 font=("TkDefaultFont", 9), bg=t["bg"], fg=t["muted_fg"]
+                 ).pack(anchor="w", pady=(0, 10))
+
+        # Helper widgets
+        err_color = "#F87171" if self.dark_mode else "#DC2626"
+        ok_color  = "#4ADE80" if self.dark_mode else "#16A34A"
+
+        def _section(title):
+            tk.Label(pad, text=title,
+                     font=("TkDefaultFont", 10, "bold"),
+                     bg=t["bg"], fg=t["fg"]).pack(anchor="w", pady=(14, 2))
+            tk.Frame(pad, height=1, bg=t["border"]).pack(fill=tk.X, pady=(0, 8))
+
+        def _status_lbl():
+            v = tk.StringVar()
+            lbl = tk.Label(pad, textvariable=v, font=("TkDefaultFont", 9),
+                           bg=t["bg"], fg=ok_color, wraplength=440, justify="left")
+            lbl.pack(anchor="w", pady=(2, 0))
+            return v, lbl
+
+        def _btn_row(*items):
+            r = tk.Frame(pad, bg=t["bg"])
+            r.pack(anchor="w", pady=(0, 4))
+            return r
+
+        def _mk_btn(parent, text, cmd, primary=False):
+            bg = t["accent"] if primary else t["surface2"]
+            fg = t["accent_fg"] if primary else t["fg"]
+            b = tk.Button(parent, text=text, command=cmd,
+                          bg=bg, fg=fg,
+                          activebackground=t["accent_hover"] if primary else t["border"],
+                          relief=tk.FLAT, cursor="hand2",
+                          font=("TkDefaultFont", 9, "bold" if primary else "normal"),
+                          padx=10, pady=4)
+            b.pack(side=tk.LEFT, padx=(0, 6))
+            return b
+
+        sync_info = get_last_sync_info()
+
+        # ── GITHUB GIST ───────────────────────────────────────────────────────
+        _section("🐙  GitHub Gist")
+        gist = PROVIDERS["GitHub Gist"]
+        gist_cfg = _load_creds().get("github_gist", {})
+
+        tk.Label(pad, text="Personal Access Token (gist scope):",
+                 font=("TkDefaultFont", 9), bg=t["bg"],
+                 fg=t["muted_fg"]).pack(anchor="w")
+        gist_token_var = tk.StringVar(value=gist_cfg.get("token", ""))
+        gist_entry = tk.Entry(pad, textvariable=gist_token_var, show="●", width=46,
+                              bg=t["entry_bg"], fg=t["fg"],
+                              insertbackground=t["fg"], relief=tk.FLAT,
+                              font=("TkDefaultFont", 9),
+                              highlightthickness=1, highlightbackground=t["border"])
+        gist_entry.pack(anchor="w", pady=(3, 6), fill=tk.X)
+        gist_msg, gist_lbl = _status_lbl()
+
+        if "GitHub Gist" in sync_info:
+            info = sync_info["GitHub Gist"]
+            gist_msg.set(f"✓ Connected  •  Last push: {info['last_push']}  •  Last pull: {info['last_pull']}")
+
+        def _gist_connect():
+            tok = gist_token_var.get().strip()
+            if not tok:
+                gist_msg.set("Enter a token first."); gist_lbl.configure(fg=err_color); return
+            gist.set_token(tok)
+            gist_msg.set("✓ Token saved."); gist_lbl.configure(fg=ok_color)
+
+        def _gist_push():
+            try:
+                self._save_async()
+                url = gist.push(local_path, self.username)
+                gist_msg.set(f"✓ Pushed  →  {url}"); gist_lbl.configure(fg=ok_color)
+            except Exception as e:
+                gist_msg.set(f"✗ {e}"); gist_lbl.configure(fg=err_color)
+
+        def _gist_pull():
+            try:
+                gist.pull(local_path, self.username)
+                self.manager.tasks.clear()
+                from core.storage import load_tasks
+                load_tasks(self.manager, self.username, self.enc_key)
+                self.refresh_tasks()
+                gist_msg.set("✓ Pulled and reloaded."); gist_lbl.configure(fg=ok_color)
+            except Exception as e:
+                gist_msg.set(f"✗ {e}"); gist_lbl.configure(fg=err_color)
+
+        r1 = _btn_row()
+        _mk_btn(r1, "Save token", _gist_connect)
+        _mk_btn(r1, "⬆ Push",  _gist_push,  primary=True)
+        _mk_btn(r1, "⬇ Pull",  _gist_pull)
+
+        tk.Label(pad, text="Get a token → github.com/settings/tokens  (tick 'gist')",
+                 font=("TkDefaultFont", 8), bg=t["bg"], fg=t["muted_fg"]).pack(anchor="w")
+
+        # ── GOOGLE DRIVE ──────────────────────────────────────────────────────
+        _section("🟢  Google Drive")
+        gdrive = PROVIDERS["Google Drive"]
+        gdrive_msg, gdrive_lbl = _status_lbl()
+
+        if "Google Drive" in sync_info:
+            info = sync_info["Google Drive"]
+            gdrive_msg.set(f"✓ Connected  •  Last push: {info['last_push']}")
+            gdrive_lbl.configure(fg=ok_color)
+        else:
+            gdrive_msg.set("Not connected")
+            gdrive_lbl.configure(fg=t["muted_fg"])
+
+        def _gdrive_auth():
+            try:
+                gdrive.authorise()
+                gdrive_msg.set("✓ Google Drive connected."); gdrive_lbl.configure(fg=ok_color)
+            except Exception as e:
+                gdrive_msg.set(f"✗ {e}"); gdrive_lbl.configure(fg=err_color)
+
+        def _gdrive_push():
+            try:
+                self._save_async()
+                url = gdrive.push(local_path, self.username)
+                gdrive_msg.set(f"✓ Pushed to Drive."); gdrive_lbl.configure(fg=ok_color)
+            except Exception as e:
+                gdrive_msg.set(f"✗ {e}"); gdrive_lbl.configure(fg=err_color)
+
+        def _gdrive_pull():
+            try:
+                gdrive.pull(local_path, self.username)
+                self.manager.tasks.clear()
+                from core.storage import load_tasks
+                load_tasks(self.manager, self.username, self.enc_key)
+                self.refresh_tasks()
+                gdrive_msg.set("✓ Pulled from Drive."); gdrive_lbl.configure(fg=ok_color)
+            except Exception as e:
+                gdrive_msg.set(f"✗ {e}"); gdrive_lbl.configure(fg=err_color)
+
+        r2 = _btn_row()
+        _mk_btn(r2, "🔐 Authorise", _gdrive_auth)
+        _mk_btn(r2, "⬆ Push", _gdrive_push, primary=True)
+        _mk_btn(r2, "⬇ Pull", _gdrive_pull)
+        tk.Label(pad,
+                 text="Requires:  py -m pip install google-auth-oauthlib google-api-python-client",
+                 font=("TkDefaultFont", 8), bg=t["bg"], fg=t["muted_fg"]).pack(anchor="w")
+
+        # ── DROPBOX ───────────────────────────────────────────────────────────
+        _section("📦  Dropbox")
+        dbox = PROVIDERS["Dropbox"]
+        dbox_msg, dbox_lbl = _status_lbl()
+        _dbox_flow = {"flow": None}
+
+        if "Dropbox" in sync_info:
+            info = sync_info["Dropbox"]
+            dbox_msg.set(f"✓ Connected  •  Last push: {info['last_push']}")
+            dbox_lbl.configure(fg=ok_color)
+        else:
+            dbox_msg.set("Not connected"); dbox_lbl.configure(fg=t["muted_fg"])
+
+        dbox_code_frame = tk.Frame(pad, bg=t["bg"])
+        dbox_code_frame.pack(anchor="w", pady=(4, 0))
+        dbox_code_var = tk.StringVar()
+        dbox_code_entry = tk.Entry(dbox_code_frame, textvariable=dbox_code_var, width=36,
+                                   bg=t["entry_bg"], fg=t["fg"],
+                                   insertbackground=t["fg"], relief=tk.FLAT,
+                                   font=("TkDefaultFont", 9),
+                                   highlightthickness=1, highlightbackground=t["border"],
+                                   state="disabled")
+        dbox_code_entry.pack(side=tk.LEFT, padx=(0, 6))
+
+        def _dbox_auth():
+            try:
+                _dbox_flow["flow"] = dbox.authorise()
+                dbox_code_entry.configure(state="normal")
+                dbox_msg.set("Browser opened — paste the code above then click Confirm")
+                dbox_lbl.configure(fg=t["muted_fg"])
+            except Exception as e:
+                dbox_msg.set(f"✗ {e}"); dbox_lbl.configure(fg=err_color)
+
+        def _dbox_confirm():
+            code = dbox_code_var.get().strip()
+            if not code or not _dbox_flow["flow"]:
+                return
+            try:
+                dbox.finish_auth(_dbox_flow["flow"], code)
+                dbox_code_entry.configure(state="disabled")
+                dbox_msg.set("✓ Dropbox connected."); dbox_lbl.configure(fg=ok_color)
+            except Exception as e:
+                dbox_msg.set(f"✗ {e}"); dbox_lbl.configure(fg=err_color)
+
+        def _dbox_push():
+            try:
+                self._save_async()
+                dbox.push(local_path, self.username)
+                dbox_msg.set("✓ Pushed to Dropbox."); dbox_lbl.configure(fg=ok_color)
+            except Exception as e:
+                dbox_msg.set(f"✗ {e}"); dbox_lbl.configure(fg=err_color)
+
+        def _dbox_pull():
+            try:
+                dbox.pull(local_path, self.username)
+                self.manager.tasks.clear()
+                from core.storage import load_tasks
+                load_tasks(self.manager, self.username, self.enc_key)
+                self.refresh_tasks()
+                dbox_msg.set("✓ Pulled from Dropbox."); dbox_lbl.configure(fg=ok_color)
+            except Exception as e:
+                dbox_msg.set(f"✗ {e}"); dbox_lbl.configure(fg=err_color)
+
+        r3 = _btn_row()
+        _mk_btn(r3, "🔐 Authorise", _dbox_auth)
+        _mk_btn(r3, "Confirm code", _dbox_confirm)
+        _mk_btn(r3, "⬆ Push", _dbox_push, primary=True)
+        _mk_btn(r3, "⬇ Pull", _dbox_pull)
+        tk.Label(pad, text="Requires:  py -m pip install dropbox",
+                 font=("TkDefaultFont", 8), bg=t["bg"], fg=t["muted_fg"]).pack(anchor="w")
+
+        # ── Footer ────────────────────────────────────────────────────────────
+        tk.Frame(top, height=1, bg=t["border"]).pack(fill=tk.X)
+        foot = tk.Frame(top, bg=t["surface"], height=54)
+        foot.pack(fill=tk.X, side=tk.BOTTOM)
+        foot.pack_propagate(False)
+        tk.Button(foot, text="Close", command=top.destroy,
+                  relief="flat", cursor="hand2",
+                  bg=t["accent"], fg=t["accent_fg"],
+                  activebackground=t["accent_hover"],
+                  font=("TkDefaultFont", 11, "bold")
+                  ).place(x=14, y=8, relwidth=1.0, width=-28, height=38)
+
+    def open_gantt_view(self):
+        """Open a scrollable GitHub-style Gantt timeline window."""
+        from datetime import date, timedelta
+
+        tasks_with_dates = [t for t in self.manager.tasks if t.due_date]
+        if not tasks_with_dates:
+            messagebox.showinfo("Gantt View",
+                "No tasks with due dates to display.")
+            return
+
+        t   = DARK_THEME if self.dark_mode else LIGHT_THEME
+        top = tk.Toplevel(self.root)
+        top.title("📊  Gantt Timeline")
+        top.configure(bg=t["bg"])
+        top.geometry("1000x620")
+        top.resizable(True, True)
+
+        # ── Colour helpers ────────────────────────────────────────────────────
+        PRIO_COLORS = {
+            "High":   ("#F87171", "#7F1D1D"),
+            "Medium": ("#FCD34D", "#78350F"),
+            "Low":    ("#6EE7A0", "#14532D"),
+        }
+        DONE_COLOR  = (t["border"], t["muted_fg"])
+
+        # ── Layout constants ──────────────────────────────────────────────────
+        ROW_H       = 28
+        LABEL_W     = 220
+        HEADER_H    = 56
+        DAY_W       = 22
+        TODAY       = date.today()
+
+        # Date range: earliest due - 3 days → latest due + 7 days
+        all_dates = [t2.due_date for t2 in tasks_with_dates]
+        range_start = min(all_dates) - timedelta(days=3)
+        range_end   = max(all_dates) + timedelta(days=7)
+        total_days  = (range_end - range_start).days + 1
+
+        # ── Header bar ────────────────────────────────────────────────────────
+        hdr_frame = tk.Frame(top, bg=t["surface"], height=44)
+        hdr_frame.pack(fill=tk.X)
+        hdr_frame.pack_propagate(False)
+
+        title_lbl = tk.Label(hdr_frame, text="📊  Gantt Timeline",
+                             font=("TkDefaultFont", 12, "bold"),
+                             bg=t["surface"], fg=t["fg"])
+        title_lbl.pack(side=tk.LEFT, padx=16, pady=10)
+
+        range_lbl = tk.Label(hdr_frame,
+                             text=f"{range_start.strftime('%d %b %Y')}  →  {range_end.strftime('%d %b %Y')}",
+                             font=("TkDefaultFont", 9),
+                             bg=t["surface"], fg=t["muted_fg"])
+        range_lbl.pack(side=tk.LEFT, padx=8)
+
+        # Filter var
+        filter_var = tk.StringVar(value="All")
+        for lbl in ("All", "Active", "Done", "Overdue"):
+            rb = tk.Radiobutton(
+                hdr_frame, text=lbl, variable=filter_var, value=lbl,
+                bg=t["surface"], fg=t["fg"],
+                selectcolor=t["surface"],
+                activebackground=t["surface"],
+                font=("TkDefaultFont", 9),
+                cursor="hand2",
+                command=lambda: _redraw(),
+            )
+            rb.pack(side=tk.RIGHT, padx=6)
+
+        tk.Frame(top, height=1, bg=t["border"]).pack(fill=tk.X)
+
+        # ── Scrollable canvas area ────────────────────────────────────────────
+        outer = tk.Frame(top, bg=t["bg"])
+        outer.pack(fill=tk.BOTH, expand=True)
+
+        h_scroll = ttk.Scrollbar(outer, orient=tk.HORIZONTAL,
+                                  style="Flat.Vertical.TScrollbar")
+        v_scroll = ttk.Scrollbar(outer, orient=tk.VERTICAL,
+                                  style="Flat.Vertical.TScrollbar")
+        canvas = tk.Canvas(outer, bg=t["bg"],
+                           highlightthickness=0, bd=0)
+
+        h_scroll.configure(command=canvas.xview)
+        v_scroll.configure(command=canvas.yview)
+        canvas.configure(xscrollcommand=h_scroll.set,
+                         yscrollcommand=v_scroll.set)
+
+        h_scroll.pack(side=tk.BOTTOM, fill=tk.X)
+        v_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Mouse wheel
+        def _yscroll(e):
+            canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+        def _xscroll(e):
+            canvas.xview_scroll(int(-1 * (e.delta / 120)), "units")
+        canvas.bind("<MouseWheel>",         _yscroll)
+        canvas.bind("<Shift-MouseWheel>",   _xscroll)
+
+        # ── Draw function ─────────────────────────────────────────────────────
+        def _redraw():
+            canvas.delete("all")
+            filt = filter_var.get()
+            rows = []
+            for task in tasks_with_dates:
+                if filt == "Active"  and task.done: continue
+                if filt == "Done"    and not task.done: continue
+                if filt == "Overdue" and (task.done or not task.is_overdue): continue
+                rows.append(task)
+
+            total_w = LABEL_W + total_days * DAY_W
+            total_h = HEADER_H + len(rows) * ROW_H + 20
+
+            # ── Month/week header ─────────────────────────────────────────────
+            # Month row
+            cur_month = None
+            mx = LABEL_W
+            for i in range(total_days):
+                d = range_start + timedelta(days=i)
+                if d.month != cur_month:
+                    cur_month = d.month
+                    canvas.create_rectangle(
+                        mx, 0, mx + DAY_W * 20, HEADER_H // 2,
+                        fill=t["surface"], outline=t["border"],
+                    )
+                    canvas.create_text(
+                        mx + 4, HEADER_H // 4,
+                        text=d.strftime("%b %Y"),
+                        anchor="w",
+                        font=("TkDefaultFont", 9, "bold"),
+                        fill=t["fg"],
+                    )
+                mx += DAY_W
+
+            # Day row + vertical grid lines
+            for i in range(total_days):
+                d   = range_start + timedelta(days=i)
+                x   = LABEL_W + i * DAY_W
+                is_today   = (d == TODAY)
+                is_weekend = d.weekday() >= 5
+
+                day_bg = t["accent"] if is_today else (t["surface"] if is_weekend else t["surface2"])
+                day_fg = t["accent_fg"] if is_today else (t["muted_fg"] if is_weekend else t["fg"])
+
+                canvas.create_rectangle(
+                    x, HEADER_H // 2, x + DAY_W, HEADER_H,
+                    fill=day_bg, outline=t["border"],
+                )
+                canvas.create_text(
+                    x + DAY_W // 2, HEADER_H * 3 // 4,
+                    text=str(d.day),
+                    font=("TkDefaultFont", 7, "bold" if is_today else "normal"),
+                    fill=day_fg,
+                )
+
+                # Vertical grid line through rows
+                canvas.create_line(
+                    x, HEADER_H, x, total_h,
+                    fill=t["border"], width=1,
+                )
+
+            # Today vertical highlight
+            if range_start <= TODAY <= range_end:
+                tx = LABEL_W + (TODAY - range_start).days * DAY_W
+                canvas.create_line(tx, HEADER_H, tx, total_h,
+                                   fill=t["accent"], width=2, dash=(4, 3))
+
+            # ── Task rows ─────────────────────────────────────────────────────
+            tooltip_win = {"win": None, "item": None}
+
+            for row_idx, task in enumerate(rows):
+                y_top    = HEADER_H + row_idx * ROW_H
+                y_bottom = y_top + ROW_H
+                y_mid    = (y_top + y_bottom) // 2
+
+                # Alternating row background
+                row_bg = t["surface"] if row_idx % 2 == 0 else t["bg"]
+                canvas.create_rectangle(0, y_top, total_w, y_bottom,
+                                        fill=row_bg, outline="")
+
+                # ── Label column ───────────────────────────────────────────
+                # Truncate long names
+                name_display = task.name if len(task.name) <= 26 else task.name[:25] + "…"
+                prio_icon    = {"High": "🔥", "Medium": "⚡", "Low": "🌿"}.get(task.priority, "")
+                done_prefix  = "☑ " if task.done else ""
+                canvas.create_text(
+                    8, y_mid,
+                    text=f"{done_prefix}{prio_icon} {name_display}",
+                    anchor="w",
+                    font=("TkDefaultFont", 9),
+                    fill=t["muted_fg"] if task.done else t["fg"],
+                )
+
+                # Separator
+                canvas.create_line(LABEL_W, y_top, LABEL_W, y_bottom,
+                                   fill=t["border"])
+
+                # ── Bar: start = (due - 1 day), end = due date ─────────────
+                # For tasks with only a due date, show a single-day milestone dot
+                # For tasks that also have a created_at date on the range, show a bar
+                try:
+                    created = datetime.strptime(task.created_at[:10], "%Y-%m-%d").date()
+                except Exception:
+                    created = task.due_date
+
+                bar_start = max(created, range_start)
+                bar_end   = task.due_date
+
+                if bar_start > bar_end:
+                    bar_start = bar_end
+
+                bx1 = LABEL_W + (bar_start - range_start).days * DAY_W
+                bx2 = LABEL_W + (bar_end   - range_start).days * DAY_W + DAY_W
+
+                BAR_PAD = 4
+                bar_h   = ROW_H - BAR_PAD * 2
+
+                bar_color, _ = DONE_COLOR if task.done else PRIO_COLORS.get(task.priority, PRIO_COLORS["Medium"])
+
+                # Bar body
+                bar_item = canvas.create_rectangle(
+                    bx1, y_top + BAR_PAD,
+                    bx2, y_top + BAR_PAD + bar_h,
+                    fill=bar_color, outline="",
+                    tags=(f"bar_{row_idx}",),
+                )
+
+                # Rounded end cap (diamond) at due date
+                cx = bx2 - DAY_W // 2
+                cy = y_mid
+                r  = 5
+                if bx2 - bx1 <= DAY_W:
+                    # Single-day milestone: diamond
+                    canvas.create_polygon(
+                        cx, cy - r, cx + r, cy, cx, cy + r, cx - r, cy,
+                        fill=bar_color, outline=t["bg"],
+                    )
+
+                # Subtask progress stripe
+                subtasks = getattr(task, "subtasks", [])
+                if subtasks:
+                    done_sub = sum(1 for s in subtasks if s.done)
+                    prog = done_sub / len(subtasks)
+                    stripe_w = max(2, int((bx2 - bx1) * prog))
+                    canvas.create_rectangle(
+                        bx1, y_bottom - 4, bx1 + stripe_w, y_bottom,
+                        fill=t["accent"], outline="",
+                    )
+
+                # Tooltip on hover
+                def _enter(e, task=task, row_idx=row_idx):
+                    if tooltip_win["item"] == row_idx:
+                        return
+                    if tooltip_win["win"]:
+                        try: tooltip_win["win"].destroy()
+                        except: pass
+                    tooltip_win["item"] = row_idx
+                    lines = [
+                        task.name,
+                        f"Priority: {task.priority}",
+                        f"Due: {task.due_date}",
+                        f"Status: {'Done ✓' if task.done else ('Overdue ⚠' if task.is_overdue else 'Active')}",
+                    ]
+                    if task.description:
+                        lines.append(f"Note: {task.description[:50]}")
+                    if subtasks:
+                        done_sub = sum(1 for s in subtasks if s.done)
+                        lines.append(f"Subtasks: {done_sub}/{len(subtasks)}")
+
+                    win = tk.Toplevel(top)
+                    win.overrideredirect(True)
+                    win.attributes("-topmost", True)
+                    win.configure(bg=t["border"])
+                    tk.Label(win, text="\n".join(lines),
+                             bg=t["surface2"], fg=t["fg"],
+                             font=("TkDefaultFont", 9),
+                             justify="left", padx=10, pady=6).pack(padx=1, pady=1)
+                    win.update_idletasks()
+                    wx = top.winfo_rootx() + e.x + 14
+                    wy = top.winfo_rooty() + e.y - win.winfo_reqheight() - 6
+                    win.geometry(f"+{wx}+{wy}")
+                    tooltip_win["win"] = win
+
+                def _leave(e):
+                    if tooltip_win["win"]:
+                        try: tooltip_win["win"].destroy()
+                        except: pass
+                    tooltip_win["win"]  = None
+                    tooltip_win["item"] = None
+
+                canvas.tag_bind(f"bar_{row_idx}", "<Enter>",  _enter)
+                canvas.tag_bind(f"bar_{row_idx}", "<Leave>",  _leave)
+
+                # Click bar → open edit dialog
+                def _click(e, task=task):
+                    # Select that task in main list and open edit
+                    for item in self.task_tree.get_children():
+                        vals = self.task_tree.item(item, "values")
+                        name = vals[1].split("  🔁")[0].split("  📎")[0].split("  ◈")[0].strip()
+                        if name == task.name:
+                            self.task_tree.selection_set(item)
+                            break
+                canvas.tag_bind(f"bar_{row_idx}", "<Button-1>", _click)
+
+            # Horizontal label separator
+            canvas.create_line(LABEL_W, 0, LABEL_W, total_h,
+                               fill=t["border"], width=1)
+
+            canvas.configure(scrollregion=(0, 0, total_w, total_h))
+
+        _redraw()
+
+        # Scroll to today
+        if range_start <= TODAY <= range_end:
+            frac = ((TODAY - range_start).days * DAY_W) / max(1, total_days * DAY_W)
+            canvas.after(100, lambda: canvas.xview_moveto(max(0, frac - 0.3)))
+
     def open_settings_gui(self):
         """Full Settings dialog with tabbed sections."""
         top = self._make_dialog("Settings")
@@ -1861,6 +3731,7 @@ class TodoApp:
         dark_var = tk.BooleanVar(value=self.dark_mode)
         def toggle_dark():
             self.dark_mode = dark_var.get()
+            self._last_applied_theme = None   # invalidate cache
             self.save_ui_config()
             self.apply_theme()
 
@@ -2335,7 +4206,7 @@ class TodoApp:
                 self.history.execute(cmd)
             self.refresh_tasks()
             self._update_undo_redo_buttons()
-            save_tasks(self.manager, self.username, self.enc_key)
+            self._save_async()
             top.destroy()
 
         tk.Button(
@@ -2496,7 +4367,7 @@ class TodoApp:
             task_to_edit.update_status()
             self.refresh_tasks()
             self._update_undo_redo_buttons()
-            save_tasks(self.manager, self.username, self.enc_key)
+            self._save_async()
             top.destroy()
 
         tk.Button(
@@ -2518,7 +4389,7 @@ class TodoApp:
             self.history.execute(cmd)
             self.refresh_tasks()
             self._update_undo_redo_buttons()
-            save_tasks(self.manager, self.username, self.enc_key)
+            self._save_async()
 
     def mark_done_gui(self):
         selected = self.task_tree.selection()
@@ -2536,7 +4407,7 @@ class TodoApp:
                     self._spawn_recurrence(task, next_due)
             self.refresh_tasks()
             self._update_undo_redo_buttons()
-            save_tasks(self.manager, self.username, self.enc_key)
+            self._save_async()
 
     def _copy_attachments(self, source_paths: list) -> list:
         """Copy source files into the user's attachments folder. Returns list of stored paths."""
@@ -2566,13 +4437,16 @@ class TodoApp:
         if not selected:
             messagebox.showinfo("Attachments", "Select a task first.")
             return
-        task = self._get_task(selected[0])
+
+        # Always use the parent task — subtasks don't have attachments
+        parent, sub = self.get_task_from_selection(selected[0])
+        task = parent
         if not task:
             return
 
         t   = DARK_THEME if self.dark_mode else LIGHT_THEME
         top = self._make_dialog(f"📎  Attachments — {task.name[:40]}")
-        top.geometry("460x380")
+        top.geometry("480x400")
         top.resizable(False, True)
 
         # Header
@@ -2595,16 +4469,28 @@ class TodoApp:
         )
         lb.pack(fill=tk.BOTH, expand=True)
 
+        # Empty state label
+        empty_lbl = tk.Label(list_frame, text="No attachments yet.\nClick '📎 Add' to attach files.",
+                             font=("TkDefaultFont", 9), bg=t["entry_bg"],
+                             fg=t["muted_fg"], justify="center")
+
         def _refresh_list():
             lb.delete(0, tk.END)
-            for p in task.attachments:
-                size = ""
-                try:
-                    b = os.path.getsize(p)
-                    size = f"  ({b/1024:.1f} KB)" if b < 1024*1024 else f"  ({b/1024/1024:.1f} MB)"
-                except Exception:
-                    pass
-                lb.insert(tk.END, os.path.basename(p) + size)
+            if not task.attachments:
+                lb.pack_forget()
+                empty_lbl.pack(fill=tk.BOTH, expand=True, pady=20)
+            else:
+                empty_lbl.pack_forget()
+                lb.pack(fill=tk.BOTH, expand=True)
+                for p in task.attachments:
+                    size = ""
+                    try:
+                        b = os.path.getsize(p)
+                        size = f"  ({b/1024:.1f} KB)" if b < 1024*1024 else f"  ({b/1024/1024:.1f} MB)"
+                    except Exception:
+                        size = "  (missing)"
+                    exists_icon = "" if os.path.exists(p) else "⚠ "
+                    lb.insert(tk.END, f"{exists_icon}{os.path.basename(p)}{size}")
 
         _refresh_list()
 
@@ -2613,8 +4499,6 @@ class TodoApp:
         btn_row = tk.Frame(top, bg=t["surface"], height=54)
         btn_row.pack(fill=tk.X)
         btn_row.pack_propagate(False)
-
-        ALLOWED_EXT = {".png",".jpg",".jpeg",".gif",".bmp",".webp",".odf",".txt",".csv"}
 
         def _add():
             from tkinter.filedialog import askopenfilenames
@@ -2630,12 +4514,14 @@ class TodoApp:
             if paths:
                 new_paths = self._copy_attachments(list(paths))
                 task.attachments.extend(new_paths)
-                save_tasks(self.manager, self.username, self.enc_key)
+                self._save_async()
                 _refresh_list()
+                self.refresh_tasks()
 
-        def _open():
+        def _open_selected():
             sel = lb.curselection()
             if not sel:
+                messagebox.showinfo("Open", "Select a file first.", parent=top)
                 return
             path = task.attachments[sel[0]]
             if os.path.exists(path):
@@ -2654,8 +4540,9 @@ class TodoApp:
                 f"Remove '{os.path.basename(path)}' from this task?\n"
                 "(The file is NOT deleted from disk.)", parent=top):
                 task.attachments.pop(idx)
-                save_tasks(self.manager, self.username, self.enc_key)
+                self._save_async()
                 _refresh_list()
+                self.refresh_tasks()
 
         def _reveal():
             sel = lb.curselection()
@@ -2667,7 +4554,10 @@ class TodoApp:
             else:
                 messagebox.showerror("Not found", f"File not found:\n{path}", parent=top)
 
-        for label, cmd in [("📎 Add", _add), ("🔍 Open", _open),
+        # Double-click to open
+        lb.bind("<Double-Button-1>", lambda e: _open_selected())
+
+        for label, cmd in [("📎 Add", _add), ("🔍 Open", _open_selected),
                             ("📂 Reveal", _reveal), ("🗑 Remove", _remove)]:
             b = tk.Button(btn_row, text=label, command=cmd,
                           bg=t["accent"] if label == "📎 Add" else t["surface2"],
@@ -2774,7 +4664,7 @@ class TodoApp:
             name_var.set("")
             _refresh_lb()
             self.refresh_tasks()
-            save_tasks(self.manager, self.username, self.enc_key)
+            self._save_async()
 
         add_btn = tk.Button(
             add_frame, text="Add", command=_add_sub,
@@ -2804,7 +4694,7 @@ class TodoApp:
                 sub.completed_at = None
             _refresh_lb()
             self.refresh_tasks()
-            save_tasks(self.manager, self.username, self.enc_key)
+            self._save_async()
 
         def _remove_sub():
             sel = lb.curselection()
@@ -2816,7 +4706,7 @@ class TodoApp:
                 task.remove_subtask(sub)
                 _refresh_lb()
                 self.refresh_tasks()
-                save_tasks(self.manager, self.username, self.enc_key)
+                self._save_async()
 
         def _move_up():
             sel = lb.curselection()
@@ -2826,7 +4716,7 @@ class TodoApp:
             task.subtasks[idx], task.subtasks[idx-1] = task.subtasks[idx-1], task.subtasks[idx]
             _refresh_lb()
             lb.selection_set(idx - 1)
-            save_tasks(self.manager, self.username, self.enc_key)
+            self._save_async()
 
         def _move_down():
             sel = lb.curselection()
@@ -2836,7 +4726,7 @@ class TodoApp:
             task.subtasks[idx], task.subtasks[idx+1] = task.subtasks[idx+1], task.subtasks[idx]
             _refresh_lb()
             lb.selection_set(idx + 1)
-            save_tasks(self.manager, self.username, self.enc_key)
+            self._save_async()
 
         for label, cmd in [
             ("☑ Toggle done", _toggle_done_sub),
@@ -2941,83 +4831,85 @@ class TodoApp:
         self.refresh_tasks()
 
     def refresh_calendar(self):
-        """Re-draw task-day markers on the mini calendar."""
-        # Remove all existing events
-        for ev_id in self.mini_cal.get_calevents():
-            self.mini_cal.calevent_remove(ev_id)
+        """Re-draw task-day markers on the mini calendar (batched — single redraw)."""
+        self.mini_cal._begin_update()
+        try:
+            # Remove all existing events (no redraws during batch)
+            self.mini_cal._events.clear()
 
-        today = datetime.now().date()
-        for task in self.manager.tasks:
-            if not task.due_date:
-                continue
-            due = task.due_date if not isinstance(task.due_date, str) else \
-                  datetime.strptime(task.due_date, "%Y-%m-%d").date()
-            if task.done:
-                tag = "done"
-            elif due < today:
-                tag = "overdue"
-            elif task.priority == "High":
-                tag = "high"
+            # Pre-build task-by-date lookup for tooltip hover
+            self._tasks_by_date = {}
+            today = datetime.now().date()
+            for task in self.manager.tasks:
+                if not task.due_date:
+                    continue
+                due = task.due_date if not isinstance(task.due_date, str) else \
+                      datetime.strptime(task.due_date, "%Y-%m-%d").date()
+                self._tasks_by_date.setdefault(due, []).append(task)
+                if task.done:
+                    tag = "done"
+                elif due < today:
+                    tag = "overdue"
+                elif task.priority == "High":
+                    tag = "high"
+                else:
+                    tag = "normal"
+                self.mini_cal.calevent_create(due, task.name, tag)
+
+            # Style the tags on the calendar (no redraws during batch)
+            if self.dark_mode:
+                self.mini_cal.tag_config("done",    background="#3A3F4B", foreground="#6EE7A0")
+                self.mini_cal.tag_config("overdue", background="#3D1A1A", foreground="#F87171")
+                self.mini_cal.tag_config("high",    background="#3D2A1A", foreground="#FCD34D")
+                self.mini_cal.tag_config("normal",  background="#1A2E3D", foreground="#93C5FD")
             else:
-                tag = "normal"
-            self.mini_cal.calevent_create(due, task.name, tag)
-
-        # Style the tags on the calendar
-        if self.dark_mode:
-            self.mini_cal.tag_config("done",    background="#3A3F4B", foreground="#6EE7A0")
-            self.mini_cal.tag_config("overdue", background="#3D1A1A", foreground="#F87171")
-            self.mini_cal.tag_config("high",    background="#3D2A1A", foreground="#FCD34D")
-            self.mini_cal.tag_config("normal",  background="#1A2E3D", foreground="#93C5FD")
-        else:
-            self.mini_cal.tag_config("done",    background="#D1FAE5", foreground="#065F46")
-            self.mini_cal.tag_config("overdue", background="#FEE2E2", foreground="#991B1B")
-            self.mini_cal.tag_config("high",    background="#FEF3C7", foreground="#92400E")
-            self.mini_cal.tag_config("normal",  background="#DBEAFE", foreground="#1E40AF")
-        # Re-bind tooltips after calendar redraws (150ms lets tkcalendar finish rendering)
-        self.mini_cal.after(150, self._bind_cal_day_tooltips)
+                self.mini_cal.tag_config("done",    background="#D1FAE5", foreground="#065F46")
+                self.mini_cal.tag_config("overdue", background="#FEE2E2", foreground="#991B1B")
+                self.mini_cal.tag_config("high",    background="#FEF3C7", foreground="#92400E")
+                self.mini_cal.tag_config("normal",  background="#DBEAFE", foreground="#1E40AF")
+        finally:
+            self.mini_cal._end_update()  # single redraw here
+        # Trigger tooltip rebind (canvas-based, happens immediately)
+        self._bind_cal_day_tooltips()
 
     # ═══════════════════════════════════════════════
     #  CALENDAR TOOLTIP
     # ═══════════════════════════════════════════════
 
     def _bind_nav_buttons(self):
-        """Attach rebind triggers to the four month/year navigation buttons."""
-        for btn in [self.mini_cal._l_month, self.mini_cal._r_month,
-                    self.mini_cal._l_year,  self.mini_cal._r_year]:
+        """Attach month-change triggers to canvas calendar nav buttons."""
+        for btn in (self.mini_cal._l_month, self.mini_cal._r_month,
+                    self.mini_cal._l_year,  self.mini_cal._r_year):
             btn.bind("<ButtonRelease-1>",
-                     lambda e: self.mini_cal.after(150, self._bind_cal_day_tooltips),
-                     add="+")
+                     lambda e: self.refresh_calendar(), add="+")
+        self.mini_cal.bind("<<CalendarMonthChanged>>",
+                           lambda e: self.refresh_calendar())
 
     def _bind_cal_day_tooltips(self):
         """
-        Bind <Enter>/<Leave> on each day cell in mini_cal._calendar (a 6x7 grid
-        of ttk.Label widgets). Uses calendar.monthcalendar to map each cell to
-        an exact date — cells that belong to prev/next month get 0 and are skipped.
+        Bind Motion/Leave on the canvas for per-day hover tooltips.
+        The MiniCalendar already handles hover highlighting internally;
+        we just need to show our custom task tooltip on the canvas.
         """
-        import calendar as cal_lib
-        from datetime import date as dt_date
+        canvas = self.mini_cal._canvas
 
-        cal   = self.mini_cal
-        year  = cal._date.year
-        month = cal._date.month
+        def _motion(event):
+            d = self.mini_cal._hit(event.x, event.y)
+            if d == self._cal_tooltip_date:
+                return
+            self._hide_cal_tooltip()
+            self._cal_tooltip_date = d
+            if d:
+                tasks_on_day = getattr(self, '_tasks_by_date', {}).get(d, [])
+                if tasks_on_day:
+                    self._show_cal_tooltip(event, tasks_on_day)
 
-        # monthcalendar: list of 6 (or 5) weeks; 0 means day is outside this month
-        weeks = cal_lib.monthcalendar(year, month)
-        while len(weeks) < 6:          # pad to 6 rows to match _calendar
-            weeks.append([0] * 7)
+        def _leave(event):
+            self._hide_cal_tooltip()
+            self._cal_tooltip_date = None
 
-        for row_idx, (row_labels, week_days) in enumerate(zip(cal._calendar, weeks)):
-            for col_idx, (label, day_num) in enumerate(zip(row_labels, week_days)):
-                # Remove any previous bindings first
-                label.unbind("<Enter>")
-                label.unbind("<Leave>")
-                if day_num == 0:
-                    continue           # other-month greyed cell — skip
-                cell_date = dt_date(year, month, day_num)
-                label.bind("<Enter>",
-                           lambda e, d=cell_date: self._on_cal_day_enter(e, d))
-                label.bind("<Leave>",
-                           lambda e: self._on_cal_day_leave(e))
+        canvas.bind("<Motion>", _motion, add="+")
+        canvas.bind("<Leave>",  _leave,  add="+")
 
     def _on_cal_day_enter(self, event, cell_date):
         if cell_date == self._cal_tooltip_date:
@@ -3166,7 +5058,7 @@ class TodoApp:
                         self._spawn_recurrence(task, next_due)
                 self.refresh_tasks()
                 self._update_undo_redo_buttons()
-                save_tasks(self.manager, self.username, self.enc_key)
+                self._save_async()
             return "break"
 
     def get_task_from_selection(self, item_id):
@@ -3228,28 +5120,37 @@ class TodoApp:
     def refresh_tasks(self):
         if hasattr(self, "_reminder_svc"):
             self._reminder_svc.reset_fired()
-        for row in self.task_tree.get_children():
-            self.task_tree.delete(row)
 
-        tasks = self.get_sorted_tasks()
-        total     = len(self.manager.tasks)
-        done      = sum(1 for t in self.manager.tasks if t.done)
-        remaining = total - done
-        self.count_label.configure(text=f"{remaining} remaining · {done} done")
+        # ── Batch-delete all existing rows ────────────────────────────────────
+        tree = self.task_tree
+        children = tree.get_children()
+        if children:
+            tree.delete(*children)   # single call vs looping delete
 
+        tasks   = self.get_sorted_tasks()
+        today   = datetime.now().date()   # compute once
+        total   = len(self.manager.tasks)
+        done_c  = sum(1 for t in self.manager.tasks if t.done)
+        self.count_label.configure(text=f"{total - done_c} remaining · {done_c} done")
+
+        # Hoist constants out of the loop
+        RECUR_ICON  = {"Daily": "🔁 Daily", "Weekly": "🔁 Weekly", "Monthly": "🔁 Monthly"}
+        prio_icons  = PRIORITY_ICONS
+        days_info_fn = self._days_info
+
+        # ── Single-pass treeview population ───────────────────────────────────
         for t in tasks:
             if isinstance(t.due_date, str):
                 t.due_date = datetime.strptime(t.due_date, "%Y-%m-%d").date() if t.due_date else None
 
-            due_str   = t.due_date.strftime("%Y-%m-%d") if t.due_date else "—"
-            days_info = "" if t.done else self._days_info(t)
-            checkbox  = "☑" if t.done else "☐"
+            due_str      = t.due_date.strftime("%Y-%m-%d") if t.due_date else "—"
+            days_info    = "" if t.done else days_info_fn(t)
+            checkbox     = "☑" if t.done else "☐"
+            category     = t.category if hasattr(t, "category") else "General"
+            recurrence   = t.recurrence if hasattr(t, "recurrence") else None
+            attachments  = t.attachments if hasattr(t, "attachments") else []
+            subtasks     = t.subtasks    if hasattr(t, "subtasks")    else []
 
-            category    = getattr(t, "category", "General")
-            recurrence  = getattr(t, "recurrence", None)
-            attachments = getattr(t, "attachments", [])
-            subtasks    = getattr(t, "subtasks", [])
-            RECUR_ICON  = {"Daily": "🔁 Daily", "Weekly": "🔁 Weekly", "Monthly": "🔁 Monthly"}
             display_name = t.name
             if recurrence:
                 display_name += f"  {RECUR_ICON[recurrence]}"
@@ -3259,60 +5160,57 @@ class TodoApp:
                 done_sub = sum(1 for s in subtasks if s.done)
                 display_name += f"  ◈ {done_sub}/{len(subtasks)}"
 
-            row_id = self.task_tree.insert(
+            # Determine tag once
+            if t.done:
+                tag = "done"
+            elif t.due_date and t.due_date < today:
+                tag = "overdue"
+            elif t.priority == "High":
+                tag = "high"
+            elif t.priority == "Medium":
+                tag = "medium"
+            else:
+                tag = "low"
+
+            row_id = tree.insert(
                 "", tk.END,
                 values=(checkbox, display_name, category,
-                        PRIORITY_ICONS.get(t.priority, t.priority),
+                        prio_icons.get(t.priority, t.priority),
                         due_str, days_info, t.description),
                 open=True,
+                tags=(tag,),   # pass tag in insert, not a separate item() call
             )
 
-            if t.done:
-                self.task_tree.item(row_id, tags=("done",))
-            elif t.due_date and t.due_date < datetime.now().date():
-                self.task_tree.item(row_id, tags=("overdue",))
-            elif t.priority == "High":
-                self.task_tree.item(row_id, tags=("high",))
-            elif t.priority == "Medium":
-                self.task_tree.item(row_id, tags=("medium",))
-            else:
-                self.task_tree.item(row_id, tags=("low",))
-
-            # ── Insert subtasks as indented children ──
             for sub in subtasks:
-                sub_due     = sub.due_date.strftime("%Y-%m-%d") if sub.due_date else "—"
-                sub_days    = "" if sub.done else self._days_info(sub)
-                sub_check   = "☑" if sub.done else "☐"
-                sub_display = f"  ↳ {sub.name}"
-                sub_id = self.task_tree.insert(
+                sub_due   = sub.due_date.strftime("%Y-%m-%d") if sub.due_date else "—"
+                sub_days  = "" if sub.done else days_info_fn(sub)
+                sub_tag   = ("done" if sub.done else
+                             "high" if sub.priority == "High" else
+                             "medium" if sub.priority == "Medium" else "low")
+                tree.insert(
                     row_id, tk.END,
-                    values=(sub_check, sub_display, "",
-                            PRIORITY_ICONS.get(sub.priority, sub.priority),
+                    values=("☑" if sub.done else "☐", f"  ↳ {sub.name}", "",
+                            prio_icons.get(sub.priority, sub.priority),
                             sub_due, sub_days, sub.description),
+                    tags=(sub_tag,),
                 )
-                if sub.done:
-                    self.task_tree.item(sub_id, tags=("done",))
-                elif sub.priority == "High":
-                    self.task_tree.item(sub_id, tags=("high",))
-                elif sub.priority == "Medium":
-                    self.task_tree.item(sub_id, tags=("medium",))
-                else:
-                    self.task_tree.item(sub_id, tags=("low",))
 
-        self._configure_tags()
+        # Only reconfigure tags when theme changes (moved to apply_theme)
+        if not hasattr(self, '_tags_configured'):
+            self._configure_tags()
+            self._tags_configured = True
 
-        # Update column headers with sort direction arrow
+        # Update column sort headers
         active_sort = self.sort_type.get()
         arrow = "  ▼" if self.sort_reverse else "  ▲"
         for col, sort_key in self._col_sort_map.items():
-            label = col + (arrow if sort_key == active_sort else "")
-            self.task_tree.heading(col, text=label,
-                                   command=lambda c=col: self._sort_by_column(c))
+            tree.heading(col, text=col + (arrow if sort_key == active_sort else ""),
+                         command=lambda c=col: self._sort_by_column(c))
 
-        # Sync calendar markers, dashboard stats, and tray
-        self.refresh_calendar()
-        self.refresh_stats()
-        self.root.after(0, self._refresh_tray)
+        # Defer expensive sidebar/tray updates to avoid blocking the UI
+        self.root.after(1, self.refresh_calendar)
+        self.root.after(1, self.refresh_stats)
+        self.root.after(50, self._refresh_tray)
 
     def refresh_stats(self):
         """Recalculate all dashboard stat values and redraw the progress bar."""
@@ -3374,7 +5272,11 @@ class TodoApp:
                 0, 0, int(w * pct / 100), 6,
                 fill=fill_color, outline="", width=0
             )
-        self.refresh_heatmap()
+        # Heatmap is expensive — only redraw if task count changed
+        new_sig = len(self.manager.tasks)
+        if not hasattr(self, "_heatmap_sig") or self._heatmap_sig != new_sig:
+            self._heatmap_sig = new_sig
+            self.refresh_heatmap()
 
     def refresh_heatmap(self):
         """Redraw the GitHub-style activity heatmap (last ~3 months, by due date)."""
@@ -3680,14 +5582,14 @@ class TodoApp:
         if desc:
             self.refresh_tasks()
             self._update_undo_redo_buttons()
-            save_tasks(self.manager, self.username, self.enc_key)
+            self._save_async()
 
     def redo_action(self):
         desc = self.history.redo()
         if desc:
             self.refresh_tasks()
             self._update_undo_redo_buttons()
-            save_tasks(self.manager, self.username, self.enc_key)
+            self._save_async()
 
     def _update_undo_redo_buttons(self):
         t = DARK_THEME if self.dark_mode else LIGHT_THEME
@@ -3711,8 +5613,12 @@ class TodoApp:
             lambda: self.history.redo_label() if self.history.can_redo() else "")
 
     def auto_save(self):
-        save_tasks(self.manager, self.username, self.enc_key)
-        self.save_ui_config()   # persists geometry on every auto-save tick
+        self._save_async()
+        # Only save config if geometry changed (avoids redundant disk writes)
+        current_geo = self.root.geometry()
+        if getattr(self, '_last_saved_geo', None) != current_geo:
+            self._last_saved_geo = current_geo
+            self.save_ui_config()
         self.root.after(10000, self.auto_save)
 
     # ═══════════════════════════════════════════════
@@ -3842,6 +5748,8 @@ class TodoApp:
             self._reminder_svc.stop()
         if hasattr(self, "_api_server") and self._api_server:
             self._api_server.stop()
-        save_tasks(self.manager, self.username, self.enc_key)
+        # Synchronous save on exit — must complete before window is destroyed
+        save_tasks(self.manager, self.username, self.enc_key,
+                   workspace=self.workspace)
         self.save_ui_config()
         self.root.destroy()

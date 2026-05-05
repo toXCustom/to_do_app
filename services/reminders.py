@@ -27,26 +27,26 @@ except ImportError:
 # ── Defaults ──────────────────────────────────────────────────────────────────
 DEFAULT_CONFIG = {
     "reminders_enabled": True,
-    "remind_overdue":    True,      # notify for overdue tasks
-    "remind_today":      True,      # notify for tasks due today
-    "remind_tomorrow":   False,     # notify for tasks due tomorrow
-    "remind_3days":      False,     # notify for tasks due within 3 days
-    "check_interval":    60,        # seconds between checks
+    "remind_overdue":    True,
+    "remind_today":      True,
+    "remind_tomorrow":   False,
+    "remind_3days":      False,
+    "check_interval":    60,
 }
 
 APP_NAME  = "My Tasks"
-APP_ICON  = None   # set to .ico path if you have one
+APP_ICON  = None
 
 
 class ReminderService:
     def __init__(self, root, get_tasks_fn, config: dict):
         self.root        = root
-        self.get_tasks   = get_tasks_fn   # callable → list[Task]
+        self.get_tasks   = get_tasks_fn
         self.cfg         = {**DEFAULT_CONFIG, **config}
         self._stop_evt   = threading.Event()
         self._thread     = None
-        self._fired: set = set()   # task ids already notified this session
-        self._toast_win  = None    # current in-app toast window
+        self._fired: set = set()   # stable task IDs already notified
+        self._toast_win  = None
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -70,7 +70,6 @@ class ReminderService:
     # ── Background loop ───────────────────────────────────────────────────────
 
     def _loop(self):
-        # Initial delay so app finishes drawing before first check
         time.sleep(5)
         while not self._stop_evt.is_set():
             if self.cfg.get("reminders_enabled", True):
@@ -86,34 +85,38 @@ class ReminderService:
         in3days  = today + timedelta(days=3)
         tasks    = self.get_tasks()
 
+        cfg_overdue  = self.cfg.get("remind_overdue", True)
+        cfg_today    = self.cfg.get("remind_today", True)
+        cfg_tomorrow = self.cfg.get("remind_tomorrow", False)
+        cfg_3days    = self.cfg.get("remind_3days", False)
+        fired        = self._fired
+
         for task in tasks:
             if task.done:
                 continue
-            uid = id(task)
-            if uid in self._fired:
+            # Use stable task id instead of id(task) which can be reused after GC
+            tid = getattr(task, "id", None) or id(task)
+            if tid in fired:
                 continue
 
             due = task.due_date
+            if due is None:
+                continue
+
             fire = False
             urgency = "normal"
 
-            if due is None:
-                continue
-            if due < today and self.cfg.get("remind_overdue", True):
-                fire    = True
-                urgency = "critical"
-            elif due == today and self.cfg.get("remind_today", True):
-                fire    = True
-                urgency = "normal"
-            elif due == tomorrow and self.cfg.get("remind_tomorrow", False):
-                fire    = True
-                urgency = "normal"
-            elif today < due <= in3days and self.cfg.get("remind_3days", False):
-                fire    = True
-                urgency = "low"
+            if due < today and cfg_overdue:
+                fire, urgency = True, "critical"
+            elif due == today and cfg_today:
+                fire = True
+            elif due == tomorrow and cfg_tomorrow:
+                fire = True
+            elif today < due <= in3days and cfg_3days:
+                fire, urgency = True, "low"
 
             if fire:
-                self._fired.add(uid)
+                fired.add(tid)
                 self.root.after(0, lambda t=task, u=urgency: self._notify(t, u))
 
     # ── Notification dispatch ─────────────────────────────────────────────────
@@ -138,10 +141,8 @@ class ReminderService:
         if PLYER_AVAILABLE:
             try:
                 _plyer_notify.notify(
-                    title=title,
-                    message=msg,
-                    app_name=APP_NAME,
-                    app_icon=APP_ICON or "",
+                    title=title, message=msg,
+                    app_name=APP_NAME, app_icon=APP_ICON or "",
                     timeout=8,
                 )
                 sent = True
@@ -154,13 +155,11 @@ class ReminderService:
     # ── In-app toast (plyer fallback) ─────────────────────────────────────────
 
     def _show_toast(self, title: str, message: str, urgency: str = "normal"):
-        """Show a non-blocking, auto-dismissing toast at bottom-right."""
         if self._toast_win and self._toast_win.winfo_exists():
             try:
                 self._toast_win.destroy()
             except Exception:
                 pass
-
         toast = self._toast_win = _InAppToast(self.root, title, message, urgency)
         toast.show()
 
@@ -211,7 +210,6 @@ class _InAppToast:
                  wraplength=self.WIDTH - 30,
                  anchor="w", justify="left").pack(fill=tk.X)
 
-        # Position: bottom-right of screen
         win.update_idletasks()
         sw = root.winfo_screenwidth()
         sh = root.winfo_screenheight()
@@ -219,17 +217,13 @@ class _InAppToast:
         y  = sh - self.HEIGHT - 60
         win.geometry(f"{self.WIDTH}x{self.HEIGHT}+{x}+{y}")
 
-        # Click to dismiss
         for w in [win, inner] + inner.winfo_children():
             try:
                 w.bind("<Button-1>", lambda e: self._dismiss())
             except Exception:
                 pass
 
-        # Auto-dismiss
         win.after(self.DURATION_MS, self._dismiss)
-
-        # Slide-in animation (fade in via alpha)
         self._fade_in(win, 0.0)
 
     def _fade_in(self, win, alpha):
